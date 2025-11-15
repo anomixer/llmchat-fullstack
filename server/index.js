@@ -84,16 +84,80 @@ app.post('/api/chat', async (req, res) => {
         const dynamicChatProvider = new ChatProvider(dynamicProvider)
 
         // 生成回應
+        console.log('Generating response for message:', message.substring(0, 50))
         const response = await dynamicChatProvider.generateResponse({
             message,
             history: history || [],
             settings: chatSettings
         })
 
+        console.log('Response generated:', response.substring(0, 50))
         res.json({ response })
     } catch (error) {
         console.error('Chat error:', error)
+        console.error('Error stack:', error.stack)
         res.status(500).json({ error: '處理請求時發生錯誤', details: error.message })
+    }
+})
+
+// 流式聊天端點 - 支持實時串流回應
+app.post('/api/chat/stream', async (req, res) => {
+    try {
+        const { message, settings, history } = req.body
+
+        if (!message) {
+            return res.status(400).json({ error: '消息不能為空' })
+        }
+
+        // 設置流式回應頭
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+        res.setHeader('Cache-Control', 'no-cache')
+        res.setHeader('Connection', 'keep-alive')
+
+        // 設置預設設定
+        const chatSettings = {
+            model: settings?.model || 'llama2',
+            temperature: settings?.temperature || 0.7,
+            maxTokens: settings?.maxTokens || 2048,
+            systemPrompt: settings?.systemPrompt || '你是一個有用的AI助手，請用繁體中文回答用戶的問題。',
+            apiUrl: settings?.apiUrl || 'http://localhost:11434',
+            apiKey: settings?.apiKey || ''
+        }
+
+        // 使用自定義 API URL 和 API Key 的動態提供者
+        const dynamicProvider = new OllamaProvider(chatSettings.apiUrl, chatSettings.apiKey)
+
+        // 使用 OllamaProvider 的流式生成方法
+        try {
+            const streamGenerator = dynamicProvider.generateResponseStream({
+                message,
+                history: history || [],
+                settings: chatSettings
+            })
+
+            for await (const chunk of streamGenerator) {
+                console.log('Streaming chunk:', chunk)
+                res.write(chunk)
+            }
+
+            console.log('Stream completed successfully')
+            res.end()
+        } catch (error) {
+            console.error('Stream processing error:', error)
+            if (!res.headersSent) {
+                res.status(500).json({ error: '流式處理錯誤', details: error.message })
+            } else {
+                res.end()
+            }
+        }
+
+    } catch (error) {
+        console.error('Stream chat error:', error)
+        if (!res.headersSent) {
+            res.status(500).json({ error: '處理請求時發生錯誤', details: error.message })
+        } else {
+            res.end()
+        }
     }
 })
 

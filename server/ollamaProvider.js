@@ -72,6 +72,8 @@ export class OllamaProvider {
         } = settings
 
         try {
+            console.log('OllamaProvider.generateResponse called with:', { message: message.substring(0, 50), model, temperature })
+
             // 構建完整的對話歷史
             const messages = []
 
@@ -112,18 +114,15 @@ export class OllamaProvider {
                 }
             }
 
-            console.log('發送請求到 Ollama:', {
-                model: requestData.model,
-                messageCount: messages.length,
-                temperature: requestData.options.temperature
-            })
+            console.log('發送請求到 Ollama:', JSON.stringify(requestData, null, 2))
 
             const response = await this.client.post('/api/chat', requestData)
+            console.log('Ollama response:', response.data)
 
             if (response.data && response.data.message) {
                 return response.data.message.content
             } else {
-                throw new Error('無效的回應格式')
+                throw new Error('無效的回應格式: ' + JSON.stringify(response.data))
             }
 
         } catch (error) {
@@ -145,7 +144,7 @@ export class OllamaProvider {
         }
     }
 
-    // 流式生成回應（可用於未來的實時聊天）
+    // 流式生成回應
     async *generateResponseStream({ message, history = [], settings = {} }) {
         const {
             model = 'llama2',
@@ -190,30 +189,33 @@ export class OllamaProvider {
                 }
             }
 
+            console.log('Sending streaming request to Ollama:', JSON.stringify(requestData, null, 2))
+
             const response = await this.client.post('/api/chat', requestData, {
-                responseType: 'stream'
+                responseType: 'stream',
+                timeout: 60000
             })
 
             const stream = response.data
 
-            return {
-                async *[Symbol.asyncIterator]() {
-                    for await (const chunk of stream) {
-                        const lines = chunk.toString().split('\n').filter(line => line.trim())
+            for await (const chunk of stream) {
+                const lines = chunk.toString().split('\n').filter(line => line.trim())
 
-                        for (const line of lines) {
-                            try {
-                                const data = JSON.parse(line)
-                                if (data.message?.content) {
-                                    yield data.message.content
-                                }
-                                if (data.done) {
-                                    return
-                                }
-                            } catch (e) {
-                                // 忽略解析錯誤
-                            }
+                for (const line of lines) {
+                    try {
+                        const data = JSON.parse(line)
+                        console.log('Stream data received:', data)
+
+                        // Yield the entire JSON line instead of just content
+                        yield line + '\n'
+
+                        if (data.done) {
+                            console.log('Stream completed')
+                            return
                         }
+                    } catch (e) {
+                        console.error('Parse error:', e, 'Line:', line)
+                        // 忽略解析錯誤
                     }
                 }
             }

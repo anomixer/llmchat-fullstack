@@ -1,11 +1,73 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, Settings, Trash2, Moon, Sun } from 'lucide-react'
+import { Send, Bot, User, Settings, Trash2, Moon, Sun, Plus, MessageSquare, Paperclip, X, Mic, MicOff, Volume2, VolumeX, Download } from 'lucide-react'
+
+// Web Speech API types
+declare global {
+    interface Window {
+        SpeechRecognition: typeof SpeechRecognition
+        webkitSpeechRecognition: typeof SpeechRecognition
+    }
+}
+
+interface SpeechRecognition extends EventTarget {
+    continuous: boolean
+    interimResults: boolean
+    lang: string
+    start(): void
+    stop(): void
+    abort(): void
+    onstart: ((this: SpeechRecognition, ev: Event) => any) | null
+    onend: ((this: SpeechRecognition, ev: Event) => any) | null
+    onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any) | null
+    onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => any) | null
+}
+
+interface SpeechRecognitionEvent extends Event {
+    results: SpeechRecognitionResultList
+    resultIndex: number
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+    error: string
+    message: string
+}
+
+interface SpeechRecognitionResultList {
+    readonly length: number
+    item(index: number): SpeechRecognitionResult
+    [index: number]: SpeechRecognitionResult
+}
+
+interface SpeechRecognitionResult {
+    readonly length: number
+    item(index: number): SpeechRecognitionAlternative
+    [index: number]: SpeechRecognitionAlternative
+    isFinal: boolean
+}
+
+interface SpeechRecognitionAlternative {
+    transcript: string
+    confidence: number
+}
+
+declare var SpeechRecognition: {
+    prototype: SpeechRecognition
+    new(): SpeechRecognition
+}
 
 interface Message {
     id: string
     role: 'user' | 'assistant'
     content: string
     timestamp: Date
+}
+
+interface Conversation {
+    id: string
+    title: string
+    messages: Message[]
+    createdAt: Date
+    updatedAt: Date
 }
 
 interface ChatSettings {
@@ -19,13 +81,49 @@ interface ChatSettings {
 }
 
 const App: React.FC = () => {
-    const [messages, setMessages] = useState<Message[]>([])
+    const [conversations, setConversations] = useState<Conversation[]>(() => {
+        try {
+            const saved = localStorage.getItem('conversations')
+            if (saved) {
+                const parsed = JSON.parse(saved)
+                // 確保Date對象正確解析
+                return parsed.map((conv: any) => ({
+                    ...conv,
+                    createdAt: new Date(conv.createdAt),
+                    updatedAt: new Date(conv.updatedAt),
+                    messages: conv.messages.map((msg: any) => ({
+                        ...msg,
+                        timestamp: new Date(msg.timestamp)
+                    }))
+                }))
+            }
+            return []
+        } catch (error) {
+            console.error('Error loading conversations from localStorage:', error)
+            return []
+        }
+    })
+    const [currentConversationId, setCurrentConversationId] = useState<string>(() => {
+        try {
+            const saved = localStorage.getItem('currentConversationId')
+            return saved || ''
+        } catch (error) {
+            console.error('Error loading currentConversationId from localStorage:', error)
+            return ''
+        }
+    })
     const [input, setInput] = useState('')
     const [isLoading, setIsLoading] = useState(false)
     const [showSettings, setShowSettings] = useState(false)
+    const [showConversations, setShowConversations] = useState(false)
     const [isDarkMode, setIsDarkMode] = useState(() => {
-        const saved = localStorage.getItem('theme')
-        return saved ? JSON.parse(saved) : false
+        try {
+            const saved = localStorage.getItem('theme')
+            return saved ? JSON.parse(saved) : false
+        } catch (error) {
+            console.error('Error loading theme from localStorage:', error)
+            return false
+        }
     })
     const [availableModels, setAvailableModels] = useState<Array<{ id: string; name: string }>>([])
     const [isLoadingModels, setIsLoadingModels] = useState(true)
@@ -38,8 +136,21 @@ const App: React.FC = () => {
         topP: 0.9,
         topK: 40
     })
+    const [attachedFiles, setAttachedFiles] = useState<File[]>([])
+    const [isRecording, setIsRecording] = useState(false)
+    const [isSpeaking, setIsSpeaking] = useState(false)
+    const [isStreaming, setIsStreaming] = useState(false)
+    // 永遠啟用串流模式
+    const streamingModeEnabled = true
+    const [streamingMessage, setStreamingMessage] = useState('')
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const textareaRef = useRef<HTMLTextAreaElement>(null)
+    const fileInputRef = useRef<HTMLInputElement>(null)
+    const recognitionRef = useRef<SpeechRecognition | null>(null)
+    const synthRef = useRef<SpeechSynthesis | null>(null)
+
+    // 當前對話的消息
+    const currentMessages = conversations.find(c => c.id === currentConversationId)?.messages || []
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -82,7 +193,12 @@ const App: React.FC = () => {
 
     useEffect(() => {
         scrollToBottom()
-    }, [messages])
+    }, [currentMessages])
+
+    // 當流式消息更新時也滾動到底部
+    useEffect(() => {
+        scrollToBottom()
+    }, [streamingMessage])
 
     useEffect(() => {
         if (textareaRef.current) {
@@ -91,10 +207,465 @@ const App: React.FC = () => {
         }
     }, [input])
 
+    // 保存對話到本地存儲
+    useEffect(() => {
+        localStorage.setItem('conversations', JSON.stringify(conversations))
+    }, [conversations])
+
+    useEffect(() => {
+        localStorage.setItem('currentConversationId', currentConversationId)
+    }, [currentConversationId])
+
+    // 創建新對話
+    const createNewConversation = () => {
+        const newConversation: Conversation = {
+            id: Date.now().toString(),
+            title: `對話 ${conversations.length + 1}`,
+            messages: [],
+            createdAt: new Date(),
+            updatedAt: new Date()
+        }
+        setConversations(prev => [...prev, newConversation])
+        setCurrentConversationId(newConversation.id)
+    }
+
+    // 切換對話
+    const switchConversation = (conversationId: string) => {
+        setCurrentConversationId(conversationId)
+        setShowConversations(false)
+    }
+
+    // 刪除對話
+    const deleteConversation = (conversationId: string) => {
+        const conversation = conversations.find(c => c.id === conversationId)
+        if (!conversation) return
+
+        const confirmed = window.confirm(`確定要刪除對話「${conversation.title}」嗎？此操作無法復原。`)
+        if (!confirmed) return
+
+        setConversations(prev => prev.filter(c => c.id !== conversationId))
+        if (currentConversationId === conversationId) {
+            const remaining = conversations.filter(c => c.id !== conversationId)
+            setCurrentConversationId(remaining.length > 0 ? remaining[0].id : '')
+        }
+    }
+
+    // 更新對話標題
+    const updateConversationTitle = (conversationId: string, title: string) => {
+        setConversations(prev => prev.map(c =>
+            c.id === conversationId ? { ...c, title, updatedAt: new Date() } : c
+        ))
+    }
+
+    // 處理檔案選擇
+    const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(event.target.files || [])
+        const validFiles = files.filter(file => {
+            // 限制檔案大小 (10MB)
+            if (file.size > 10 * 1024 * 1024) {
+                alert(`檔案 ${file.name} 太大，請選擇小於 10MB 的檔案`)
+                return false
+            }
+            // 限制檔案類型
+            const allowedTypes = ['image/', 'text/', 'application/pdf', 'application/json']
+            if (!allowedTypes.some(type => file.type.startsWith(type))) {
+                alert(`檔案類型 ${file.type} 不支援`)
+                return false
+            }
+            return true
+        })
+        setAttachedFiles(prev => [...prev, ...validFiles])
+        // 重置 input
+        if (fileInputRef.current) {
+            fileInputRef.current.value = ''
+        }
+    }
+
+    // 移除附加檔案
+    const removeFile = (index: number) => {
+        setAttachedFiles(prev => prev.filter((_, i) => i !== index))
+    }
+
+    // 讀取檔案內容
+    const readFileContent = (file: File): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(reader.result as string)
+            reader.onerror = () => reject(reader.error)
+            reader.readAsText(file)
+        })
+    }
+
+    // 初始化語音識別
+    const initSpeechRecognition = () => {
+        if (!('SpeechRecognition' in window) && !('webkitSpeechRecognition' in window)) {
+            alert('您的瀏覽器不支援語音識別功能')
+            return null
+        }
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+        const recognition = new SpeechRecognition()
+
+        recognition.continuous = false
+        recognition.interimResults = false
+        recognition.lang = 'zh-TW'
+
+        recognition.onstart = () => {
+            setIsRecording(true)
+        }
+
+        recognition.onend = () => {
+            setIsRecording(false)
+        }
+
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript
+            setInput(prev => prev + transcript)
+        }
+
+        recognition.onerror = (event) => {
+            console.error('語音識別錯誤:', event.error)
+            setIsRecording(false)
+        }
+
+        return recognition
+    }
+
+    // 開始語音輸入
+    const startVoiceInput = () => {
+        if (isRecording) {
+            recognitionRef.current?.stop()
+            return
+        }
+
+        if (!recognitionRef.current) {
+            recognitionRef.current = initSpeechRecognition()
+        }
+
+        if (recognitionRef.current) {
+            recognitionRef.current.start()
+        }
+    }
+
+    // 語音輸出
+    const speakText = (text: string) => {
+        if (!('speechSynthesis' in window)) {
+            alert('您的瀏覽器不支援語音合成功能')
+            return
+        }
+
+        if (isSpeaking) {
+            window.speechSynthesis.cancel()
+            setIsSpeaking(false)
+            return
+        }
+
+        const utterance = new SpeechSynthesisUtterance(text)
+        utterance.lang = 'zh-TW'
+        utterance.rate = 1
+        utterance.pitch = 1
+
+        utterance.onstart = () => setIsSpeaking(true)
+        utterance.onend = () => setIsSpeaking(false)
+        utterance.onerror = () => setIsSpeaking(false)
+
+        window.speechSynthesis.speak(utterance)
+    }
+
+    // 導出對話記錄
+    const exportConversation = (format: 'json' | 'markdown' = 'json') => {
+        if (!currentConversationId) return
+
+        const conversation = conversations.find(c => c.id === currentConversationId)
+        if (!conversation) return
+
+        let content = ''
+        let filename = ''
+        let mimeType = ''
+
+        if (format === 'json') {
+            content = JSON.stringify(conversation, null, 2)
+            filename = `${conversation.title.replace(/[^a-zA-Z0-9]/g, '_')}.json`
+            mimeType = 'application/json'
+        } else if (format === 'markdown') {
+            content = `# ${conversation.title}\n\n`
+            content += `創建時間: ${conversation.createdAt.toLocaleString('zh-TW')}\n`
+            content += `最後更新: ${conversation.updatedAt.toLocaleString('zh-TW')}\n\n`
+            content += `---\n\n`
+
+            conversation.messages.forEach((message, index) => {
+                const role = message.role === 'user' ? '用戶' : '助手'
+                content += `## ${role} (${message.timestamp.toLocaleString('zh-TW')})\n\n`
+                content += `${message.content}\n\n`
+                if (index < conversation.messages.length - 1) {
+                    content += `---\n\n`
+                }
+            })
+
+            filename = `${conversation.title.replace(/[^a-zA-Z0-9]/g, '_')}.md`
+            mimeType = 'text/markdown'
+        }
+
+        const blob = new Blob([content], { type: mimeType })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+    }
+
+    // 流式發送消息
+    const sendStreamingMessage = async () => {
+        if ((!input.trim() && attachedFiles.length === 0) || isLoading) return
+
+        // 如果沒有當前對話，創建一個新的
+        let conversationId = currentConversationId
+        if (!conversationId) {
+            const newConversation: Conversation = {
+                id: Date.now().toString(),
+                title: `對話 ${conversations.length + 1}`,
+                messages: [],
+                createdAt: new Date(),
+                updatedAt: new Date()
+            }
+            setConversations(prev => [...prev, newConversation])
+            conversationId = newConversation.id
+            setCurrentConversationId(conversationId)
+        }
+
+        // 處理附加檔案
+        let messageContent = input.trim()
+        if (attachedFiles.length > 0) {
+            try {
+                const fileContents = await Promise.all(
+                    attachedFiles.map(async (file) => {
+                        const content = await readFileContent(file)
+                        return `[${file.name}]\n${content}`
+                    })
+                )
+                messageContent = messageContent + '\n\n' + fileContents.join('\n\n---\n\n')
+            } catch (error) {
+                console.error('Error reading files:', error)
+                alert('讀取檔案時發生錯誤')
+                return
+            }
+        }
+
+        const userMessage: Message = {
+            id: Date.now().toString(),
+            role: 'user',
+            content: messageContent,
+            timestamp: new Date()
+        }
+
+        // 更新對話消息
+        setConversations(prev => prev.map(c =>
+            c.id === conversationId
+                ? { ...c, messages: [...c.messages, userMessage], updatedAt: new Date() }
+                : c
+        ))
+
+        setInput('')
+        setAttachedFiles([]) // 清除附加檔案
+        setIsLoading(true)
+        setStreamingMessage('')
+
+        try {
+            const currentConversation = conversations.find(c => c.id === conversationId)
+            const response = await fetch('/api/chat/stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    message: userMessage.content,
+                    settings: settings,
+                    history: currentConversation?.messages || []
+                }),
+            })
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`)
+            }
+
+            const reader = response.body?.getReader()
+            const decoder = new TextDecoder()
+
+            if (reader) {
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read()
+                        if (done) {
+                            console.log('Stream reader done')
+                            break
+                        }
+
+                        const chunk = decoder.decode(value, { stream: true })
+                        console.log('Received chunk:', chunk)
+
+                        // 解析 Ollama 的 JSON Lines 格式
+                        const lines = chunk.split('\n').filter(line => line.trim())
+
+                        for (const line of lines) {
+                            try {
+                                const data = JSON.parse(line)
+                                console.log('Parsed stream data:', data)
+
+                                if (data.message?.content) {
+                                    setStreamingMessage(prev => prev + data.message.content)
+                                }
+
+                                if (data.done) {
+                                    console.log('Stream completed')
+                                    break
+                                }
+                            } catch (e) {
+                                console.error('Parse error:', e, 'Line:', line)
+                                // 忽略解析錯誤
+                            }
+                        }
+                    }
+
+                    // 獲取最終的串流消息內容
+                    const finalContent = await new Promise<string>((resolve) => {
+                        setStreamingMessage(current => {
+                            resolve(current)
+                            return current
+                        })
+                    })
+
+                    console.log('Stream completed, final response:', finalContent)
+                    // 流式回應完成
+                    const assistantMessage: Message = {
+                        id: (Date.now() + 1).toString(),
+                        role: 'assistant',
+                        content: finalContent,
+                        timestamp: new Date()
+                    }
+
+                    setConversations(prev => prev.map(c =>
+                        c.id === conversationId
+                            ? { ...c, messages: [...c.messages, assistantMessage], updatedAt: new Date() }
+                            : c
+                    ))
+
+                    // 更新對話標題（如果這是第一條消息）
+                    if (currentConversation && currentConversation.messages.length === 0) {
+                        const title = userMessage.content.length > 20
+                            ? userMessage.content.substring(0, 20) + '...'
+                            : userMessage.content
+                        updateConversationTitle(conversationId, title)
+                    }
+                } finally {
+                    reader.releaseLock()
+                }
+            }
+        } catch (error) {
+            console.error('Error sending streaming message:', error)
+            const errorMessage: Message = {
+                id: (Date.now() + 1).toString(),
+                role: 'assistant',
+                content: '抱歉，發生錯誤。請檢查後端服務是否正常運行。',
+                timestamp: new Date()
+            }
+            setConversations(prev => prev.map(c =>
+                c.id === conversationId
+                    ? { ...c, messages: [...c.messages, errorMessage], updatedAt: new Date() }
+                    : c
+            ))
+        } finally {
+            setIsLoading(false)
+            setIsStreaming(false)
+            setStreamingMessage('')
+            // 發送完成後自動聚焦到輸入框
+            setTimeout(() => {
+                textareaRef.current?.focus()
+            }, 100)
+        }
+    }
+
     // 組件掛載時載入模型列表
     useEffect(() => {
         loadAvailableModels()
     }, [])
+
+    // 初始化：如果沒有對話，創建一個新的
+    useEffect(() => {
+        if (conversations.length === 0) {
+            const timeoutId = setTimeout(() => {
+                createNewConversation()
+            }, 100) // 延遲執行，避免初始化衝突
+            return () => clearTimeout(timeoutId)
+        }
+    }, [conversations.length])
+
+    // 鍵盤快捷鍵
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            // Ctrl/Cmd + I: 新對話
+            if ((event.ctrlKey || event.metaKey) && event.key === 'i') {
+                event.preventDefault()
+                createNewConversation()
+            }
+            // Ctrl/Cmd + K: 清除對話
+            if ((event.ctrlKey || event.metaKey) && event.key === 'k') {
+                event.preventDefault()
+                clearChat()
+            }
+            // Ctrl/Cmd + ,: 開啟設定
+            if ((event.ctrlKey || event.metaKey) && event.key === ',') {
+                event.preventDefault()
+                setShowSettings(!showSettings)
+            }
+            // Ctrl/Cmd + B: 切換對話列表
+            if ((event.ctrlKey || event.metaKey) && event.key === 'b') {
+                event.preventDefault()
+                setShowConversations(!showConversations)
+            }
+            // Escape: 關閉面板
+            if (event.key === 'Escape') {
+                if (showSettings) setShowSettings(false)
+                if (showConversations) setShowConversations(false)
+            }
+        }
+
+        document.addEventListener('keydown', handleKeyDown)
+        return () => document.removeEventListener('keydown', handleKeyDown)
+    }, [showSettings, showConversations])
+
+    // 點擊外部關閉面板
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            // 關閉導出菜單
+            const menu = document.getElementById('export-menu')
+            const button = document.querySelector('[title="導出對話"]')
+            if (menu && button && !menu.contains(event.target as Node) && !button.contains(event.target as Node)) {
+                menu.classList.add('hidden')
+            }
+
+            // 關閉對話列表面板
+            const conversationsPanel = document.querySelector('[data-panel="conversations"]')
+            const conversationsButton = document.querySelector('[data-button="conversations"]')
+            if (showConversations && conversationsPanel && conversationsButton &&
+                !conversationsPanel.contains(event.target as Node) && !conversationsButton.contains(event.target as Node)) {
+                setShowConversations(false)
+            }
+
+            // 關閉設定面板
+            const settingsPanel = document.querySelector('[data-panel="settings"]')
+            const settingsButton = document.querySelector('[data-button="settings"]')
+            if (showSettings && settingsPanel && settingsButton &&
+                !settingsPanel.contains(event.target as Node) && !settingsButton.contains(event.target as Node)) {
+                setShowSettings(false)
+            }
+        }
+
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [showConversations, showSettings])
 
     // 當 API URL 變化時重新載入模型列表 (防抖)
     useEffect(() => {
@@ -107,63 +678,11 @@ const App: React.FC = () => {
     }, [settings.apiUrl])
 
     const sendMessage = async () => {
-        if (!input.trim() || isLoading) return
-
-        const userMessage: Message = {
-            id: Date.now().toString(),
-            role: 'user',
-            content: input.trim(),
-            timestamp: new Date()
-        }
-
-        setMessages(prev => [...prev, userMessage])
-        setInput('')
-        setIsLoading(true)
-
-        try {
-            const response = await fetch('/api/chat', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    message: userMessage.content,
-                    settings: settings,
-                    history: messages
-                }),
-            })
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`)
-            }
-
-            const data = await response.json()
-
-            const assistantMessage: Message = {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                content: data.response,
-                timestamp: new Date()
-            }
-
-            setMessages(prev => [...prev, assistantMessage])
-        } catch (error) {
-            console.error('Error sending message:', error)
-            const errorMessage: Message = {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                content: '抱歉，發生錯誤。請檢查後端服務是否正常運行。',
-                timestamp: new Date()
-            }
-            setMessages(prev => [...prev, errorMessage])
-        } finally {
-            setIsLoading(false)
-            // 發送完成後自動聚焦到輸入框
-            setTimeout(() => {
-                textareaRef.current?.focus()
-            }, 100)
-        }
+        console.log('Starting streaming message...')
+        setIsStreaming(true) // 立即設置串流狀態
+        await sendStreamingMessage()
     }
+
 
     const handleKeyPress = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -173,7 +692,16 @@ const App: React.FC = () => {
     }
 
     const clearChat = () => {
-        setMessages([])
+        if (currentConversationId) {
+            const confirmed = window.confirm('確定要清除當前對話的所有內容嗎？此操作無法復原。')
+            if (!confirmed) return
+
+            setConversations(prev => prev.map(c =>
+                c.id === currentConversationId
+                    ? { ...c, messages: [], updatedAt: new Date() }
+                    : c
+            ))
+        }
     }
 
     return (
@@ -190,6 +718,83 @@ const App: React.FC = () => {
                         }`}>Local LLM Chat</h1>
                 </div>
                 <div className="flex items-center space-x-2">
+                    {/* 對話列表按鈕 */}
+                    <button
+                        onClick={() => setShowConversations(!showConversations)}
+                        className={`p-2 rounded-lg transition-colors ${showConversations
+                            ? (isDarkMode ? 'text-green-400 bg-gray-700' : 'text-green-600 bg-green-50')
+                            : (isDarkMode
+                                ? 'text-gray-400 hover:text-green-400 hover:bg-gray-700'
+                                : 'text-gray-500 hover:text-green-600 hover:bg-green-50')
+                            }`}
+                        title="對話列表 (Ctrl + B)"
+                        data-button="conversations"
+                    >
+                        <MessageSquare className="h-5 w-5" />
+                    </button>
+                    {/* 新對話按鈕 */}
+                    <button
+                        onClick={createNewConversation}
+                        className={`p-2 rounded-lg transition-colors ${isDarkMode
+                            ? 'text-blue-400 hover:bg-gray-700'
+                            : 'text-blue-600 hover:bg-blue-50'
+                            }`}
+                        title="新對話 (Ctrl + I)"
+                    >
+                        <Plus className="h-5 w-5" />
+                    </button>
+                    {/* 導出按鈕 */}
+                    <div className="relative">
+                        <button
+                            onClick={() => {
+                                const menu = document.getElementById('export-menu')
+                                if (menu) menu.classList.toggle('hidden')
+                            }}
+                            className={`p-2 rounded-lg transition-colors ${isDarkMode
+                                ? 'text-gray-400 hover:text-green-400 hover:bg-gray-700'
+                                : 'text-gray-500 hover:text-green-600 hover:bg-green-50'
+                                }`}
+                            title="導出對話"
+                        >
+                            <Download className="h-5 w-5" />
+                        </button>
+                        <div
+                            id="export-menu"
+                            className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg z-10 hidden border border-gray-200 dark:border-gray-700"
+                        >
+                            <div className="py-1">
+                                <button
+                                    onClick={() => {
+                                        exportConversation('json')
+                                        document.getElementById('export-menu')?.classList.add('hidden')
+                                    }}
+                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                >
+                                    導出為 JSON
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        exportConversation('markdown')
+                                        document.getElementById('export-menu')?.classList.add('hidden')
+                                    }}
+                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                >
+                                    導出為 Markdown
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    {/* 清除對話按鈕 */}
+                    <button
+                        onClick={clearChat}
+                        className={`p-2 rounded-lg transition-colors ${isDarkMode
+                            ? 'text-gray-400 hover:text-red-400 hover:bg-gray-700'
+                            : 'text-gray-500 hover:text-red-600 hover:bg-red-50'
+                            }`}
+                        title="清除對話 (Ctrl + K)"
+                    >
+                        <Trash2 className="h-5 w-5" />
+                    </button>
                     {/* 主題切換按鈕 */}
                     <button
                         onClick={toggleTheme}
@@ -201,16 +806,7 @@ const App: React.FC = () => {
                     >
                         {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
                     </button>
-                    <button
-                        onClick={clearChat}
-                        className={`p-2 rounded-lg transition-colors ${isDarkMode
-                            ? 'text-gray-400 hover:text-red-400 hover:bg-gray-700'
-                            : 'text-gray-500 hover:text-red-600 hover:bg-red-50'
-                            }`}
-                        title="清除對話"
-                    >
-                        <Trash2 className="h-5 w-5" />
-                    </button>
+                    {/* 設定按鈕 */}
                     <button
                         onClick={() => setShowSettings(!showSettings)}
                         className={`p-2 rounded-lg transition-colors ${showSettings
@@ -219,16 +815,75 @@ const App: React.FC = () => {
                                 ? 'text-gray-400 hover:text-blue-400 hover:bg-gray-700'
                                 : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50')
                             }`}
-                        title="設定"
+                        title="設定 (Ctrl + , )"
+                        data-button="settings"
                     >
                         <Settings className="h-5 w-5" />
                     </button>
                 </div>
             </div>
 
+            {/* Conversations Panel */}
+            {showConversations && (
+                <div data-panel="conversations" className={`border-b px-4 py-3 transition-colors ${isDarkMode
+                    ? 'bg-gray-800 border-gray-700'
+                    : 'bg-white border-gray-200'
+                    }`}>
+                    <div className="space-y-2">
+                        <h3 className={`text-sm font-semibold transition-colors ${isDarkMode ? 'text-gray-200' : 'text-gray-800'
+                            }`}>
+                            對話列表
+                        </h3>
+                        <div className="max-h-60 overflow-y-auto space-y-1">
+                            {conversations.length === 0 ? (
+                                <p className={`text-sm transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'
+                                    }`}>
+                                    尚無對話
+                                </p>
+                            ) : (
+                                conversations
+                                    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+                                    .map((conversation) => (
+                                        <div
+                                            key={conversation.id}
+                                            className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${currentConversationId === conversation.id
+                                                ? (isDarkMode ? 'bg-blue-900 text-blue-200' : 'bg-blue-100 text-blue-800')
+                                                : (isDarkMode ? 'hover:bg-gray-700 text-gray-300' : 'hover:bg-gray-100 text-gray-700')
+                                                }`}
+                                            onClick={() => switchConversation(conversation.id)}
+                                        >
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium truncate">
+                                                    {conversation.title}
+                                                </p>
+                                                <p className="text-xs opacity-70">
+                                                    {conversation.messages.length} 條消息 · {conversation.updatedAt.toLocaleDateString('zh-TW')}
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    deleteConversation(conversation.id)
+                                                }}
+                                                className={`p-1 rounded transition-colors ${isDarkMode
+                                                    ? 'text-gray-400 hover:text-red-400 hover:bg-gray-600'
+                                                    : 'text-gray-500 hover:text-red-600 hover:bg-red-50'
+                                                    }`}
+                                                title="刪除對話"
+                                            >
+                                                <Trash2 className="h-3 w-3" />
+                                            </button>
+                                        </div>
+                                    ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Settings Panel */}
             {showSettings && (
-                <div className={`border-b px-4 py-3 transition-colors ${isDarkMode
+                <div data-panel="settings" className={`border-b px-4 py-3 transition-colors ${isDarkMode
                     ? 'bg-gray-800 border-gray-700'
                     : 'bg-white border-gray-200'
                     }`}>
@@ -250,7 +905,7 @@ const App: React.FC = () => {
                                     value={settings.apiUrl}
                                     onChange={(e) => setSettings(prev => ({ ...prev, apiUrl: e.target.value }))}
                                     placeholder="http://localhost:11434"
-                                    className={`max-w-md px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode
+                                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode
                                         ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
                                         : 'bg-white border-gray-300'
                                         }`}
@@ -271,7 +926,7 @@ const App: React.FC = () => {
                                     value={settings.apiKey}
                                     onChange={(e) => setSettings(prev => ({ ...prev, apiKey: e.target.value }))}
                                     placeholder="輸入 API Key (可選)"
-                                    className={`max-w-md px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode
+                                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode
                                         ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
                                         : 'bg-white border-gray-300'
                                         }`}
@@ -294,7 +949,7 @@ const App: React.FC = () => {
                                     value={settings.model}
                                     onChange={(e) => setSettings(prev => ({ ...prev, model: e.target.value }))}
                                     disabled={isLoadingModels}
-                                    className={`max-w-md px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode
+                                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode
                                         ? 'bg-gray-700 border-gray-600 text-white disabled:opacity-50'
                                         : 'bg-white border-gray-300 disabled:opacity-50'
                                         }`}
@@ -333,7 +988,7 @@ const App: React.FC = () => {
                                     step="0.1"
                                     value={settings.temperature}
                                     onChange={(e) => setSettings(prev => ({ ...prev, temperature: parseFloat(e.target.value) }))}
-                                    className={`max-w-sm ${isDarkMode ? 'accent-blue-400' : 'accent-blue-600'
+                                    className={`w-full ${isDarkMode ? 'accent-blue-400' : 'accent-blue-600'
                                         }`}
                                 />
                                 <p className={`text-xs mt-1 transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'
@@ -354,7 +1009,7 @@ const App: React.FC = () => {
                                     step="0.05"
                                     value={settings.topP}
                                     onChange={(e) => setSettings(prev => ({ ...prev, topP: parseFloat(e.target.value) }))}
-                                    className={`max-w-sm ${isDarkMode ? 'accent-blue-400' : 'accent-blue-600'
+                                    className={`w-full ${isDarkMode ? 'accent-blue-400' : 'accent-blue-600'
                                         }`}
                                 />
                                 <p className={`text-xs mt-1 transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'
@@ -375,7 +1030,7 @@ const App: React.FC = () => {
                                     step="1"
                                     value={settings.topK}
                                     onChange={(e) => setSettings(prev => ({ ...prev, topK: parseInt(e.target.value) }))}
-                                    className={`max-w-sm ${isDarkMode ? 'accent-blue-400' : 'accent-blue-600'
+                                    className={`w-full ${isDarkMode ? 'accent-blue-400' : 'accent-blue-600'
                                         }`}
                                 />
                                 <p className={`text-xs mt-1 transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'
@@ -396,7 +1051,7 @@ const App: React.FC = () => {
                                     step="100"
                                     value={settings.maxTokens}
                                     onChange={(e) => setSettings(prev => ({ ...prev, maxTokens: parseInt(e.target.value) }))}
-                                    className={`max-w-sm px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode
+                                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode
                                         ? 'bg-gray-700 border-gray-600 text-white'
                                         : 'bg-white border-gray-300'
                                         }`}
@@ -406,6 +1061,7 @@ const App: React.FC = () => {
                                     限制生成回應的最大長度
                                 </p>
                             </div>
+
                         </div>
                     </div>
                 </div>
@@ -413,7 +1069,7 @@ const App: React.FC = () => {
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-                {messages.length === 0 ? (
+                {currentMessages.length === 0 ? (
                     <div className={`text-center mt-12 transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'
                         }`}>
                         <Bot className={`h-12 w-12 mx-auto mb-4 ${isDarkMode ? 'text-gray-600' : 'text-gray-300'
@@ -422,7 +1078,7 @@ const App: React.FC = () => {
                         <p className="text-sm">輸入您的問題，我會盡力為您回答。</p>
                     </div>
                 ) : (
-                    messages.map((message) => (
+                    currentMessages.map((message) => (
                         <div
                             key={message.id}
                             className={`flex items-start space-x-3 ${message.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''
@@ -449,6 +1105,20 @@ const App: React.FC = () => {
                                         : 'bg-white text-gray-900 border border-gray-200'
                                     }`}>
                                     <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                                    {message.role === 'assistant' && (
+                                        <button
+                                            onClick={() => speakText(message.content)}
+                                            className={`mt-2 p-1 rounded transition-colors ${isSpeaking
+                                                ? 'text-green-500'
+                                                : isDarkMode
+                                                    ? 'text-gray-400 hover:text-green-400 hover:bg-gray-700'
+                                                    : 'text-gray-500 hover:text-green-600 hover:bg-gray-100'
+                                                }`}
+                                            title={isSpeaking ? '停止語音' : '語音播放'}
+                                        >
+                                            {isSpeaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                                        </button>
+                                    )}
                                 </div>
                                 <p className={`text-xs mt-1 transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'
                                     }`}>
@@ -458,7 +1128,7 @@ const App: React.FC = () => {
                         </div>
                     ))
                 )}
-                {isLoading && (
+                {false && (
                     <div className="flex items-start space-x-3">
                         <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${isDarkMode
                             ? 'bg-gray-700 text-gray-300'
@@ -478,6 +1148,32 @@ const App: React.FC = () => {
                         </div>
                     </div>
                 )}
+                {isStreaming && (() => {
+                    console.log('Rendering streaming UI, message:', streamingMessage)
+                    return (
+                        <div className="flex items-start space-x-3">
+                            <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${isDarkMode
+                                ? 'bg-gray-700 text-gray-300'
+                                : 'bg-gray-200 text-gray-600'
+                                }`}>
+                                <Bot className="h-4 w-4" />
+                            </div>
+                            <div className={`flex-1 max-w-3xl transition-colors`}>
+                                <div className={`inline-block px-4 py-2 rounded-lg transition-colors ${isDarkMode
+                                    ? 'bg-gray-800 text-gray-100 border border-gray-700'
+                                    : 'bg-white text-gray-900 border border-gray-200'
+                                    }`}>
+                                    <p className="whitespace-pre-wrap break-words">{streamingMessage || '正在生成回應...'}</p>
+                                    <div className="flex space-x-1 mt-2">
+                                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
+                                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )
+                })()}
                 <div ref={messagesEndRef} />
             </div>
 
@@ -486,6 +1182,32 @@ const App: React.FC = () => {
                 ? 'bg-gray-800 border-gray-700'
                 : 'bg-white border-gray-200'
                 }`}>
+                {/* 附加檔案顯示 */}
+                {attachedFiles.length > 0 && (
+                    <div className="mb-3 flex flex-wrap gap-2">
+                        {attachedFiles.map((file, index) => (
+                            <div
+                                key={index}
+                                className={`flex items-center space-x-2 px-3 py-1 rounded-full text-sm transition-colors ${isDarkMode
+                                    ? 'bg-gray-700 text-gray-300'
+                                    : 'bg-gray-100 text-gray-700'
+                                    }`}
+                            >
+                                <Paperclip className="h-3 w-3" />
+                                <span className="truncate max-w-32">{file.name}</span>
+                                <button
+                                    onClick={() => removeFile(index)}
+                                    className={`p-0.5 rounded-full transition-colors ${isDarkMode
+                                        ? 'hover:bg-gray-600 text-gray-400 hover:text-red-400'
+                                        : 'hover:bg-gray-200 text-gray-500 hover:text-red-600'
+                                        }`}
+                                >
+                                    <X className="h-3 w-3" />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
                 <div className="flex items-end space-x-3">
                     <div className="flex-1 relative">
                         <textarea
@@ -502,10 +1224,45 @@ const App: React.FC = () => {
                             disabled={isLoading}
                         />
                     </div>
+                    {/* 檔案上傳按鈕 */}
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        accept="image/*,text/*,.pdf,.json"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                    />
+                    {/* 語音輸入按鈕 */}
+                    <button
+                        onClick={startVoiceInput}
+                        className={`p-3 rounded-lg transition-colors ${isRecording
+                            ? 'bg-red-600 text-white animate-pulse'
+                            : isDarkMode
+                                ? 'text-gray-400 hover:text-red-400 hover:bg-gray-700'
+                                : 'text-gray-500 hover:text-red-600 hover:bg-gray-100'
+                            }`}
+                        title={isRecording ? '停止語音輸入' : '語音輸入'}
+                        disabled={isLoading}
+                    >
+                        {isRecording ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+                    </button>
+                    {/* 檔案上傳按鈕 */}
+                    <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className={`p-3 rounded-lg transition-colors ${isDarkMode
+                            ? 'text-gray-400 hover:text-blue-400 hover:bg-gray-700'
+                            : 'text-gray-500 hover:text-blue-600 hover:bg-gray-100'
+                            }`}
+                        title="附加檔案"
+                        disabled={isLoading}
+                    >
+                        <Paperclip className="h-5 w-5" />
+                    </button>
                     <button
                         onClick={sendMessage}
-                        disabled={!input.trim() || isLoading || availableModels.length === 0}
-                        className={`p-3 rounded-lg transition-colors ${input.trim() && !isLoading && availableModels.length > 0
+                        disabled={(!input.trim() && attachedFiles.length === 0) || isLoading || availableModels.length === 0}
+                        className={`p-3 rounded-lg transition-colors ${(input.trim() || attachedFiles.length > 0) && !isLoading && availableModels.length > 0
                             ? 'bg-blue-600 text-white hover:bg-blue-700'
                             : isDarkMode
                                 ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
