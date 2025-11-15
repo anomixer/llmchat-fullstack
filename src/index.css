@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 自定義樣式 */
+@layer components {
+    .chat-message {
+        @apply mb-4;
+    }
+
+    .chat-input {
+        @apply w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none;
+    }
+
+    .chat-button {
+        @apply p-3 rounded-lg transition-colors;
+    }
+
+    .chat-button-primary {
+        @apply bg-blue-600 text-white hover:bg-blue-700;
+    }
+
+    .chat-button-disabled {
+        @apply bg-gray-200 text-gray-400 cursor-not-allowed;
+    }
+}
+
+/* 聊天滾動條樣式 */
+.chat-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+.chat-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+.chat-container::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
+}
+
+.chat-container::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}

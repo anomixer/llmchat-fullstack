@@ -1,0 +1,226 @@
+import axios from 'axios'
+
+export class OllamaProvider {
+    constructor(baseUrl = 'http://localhost:11434', apiKey = '') {
+        this.baseUrl = baseUrl
+        this.apiKey = apiKey
+
+        const headers = {
+            'Content-Type': 'application/json'
+        }
+
+        // 如果提供了API Key，添加到請求頭
+        if (apiKey) {
+            headers['Authorization'] = `Bearer ${apiKey}`
+        }
+
+        this.client = axios.create({
+            baseURL: baseUrl,
+            timeout: 30000, // 30秒超時
+            headers
+        })
+    }
+
+    // 檢查 Ollama 連接
+    async checkConnection() {
+        try {
+            const response = await this.client.get('/api/version')
+            console.log('Ollama 版本:', response.data.version)
+            return true
+        } catch (error) {
+            console.error('Ollama 連接失敗:', error.message)
+            return false
+        }
+    }
+
+    // 獲取可用模型列表
+    async getAvailableModels() {
+        try {
+            console.log('正在從 Ollama 獲取模型列表...')
+            const response = await this.client.get('/api/tags')
+            console.log('Ollama 響應:', response.data)
+
+            const models = response.data.models.map(model => ({
+                name: model.name,
+                size: model.size,
+                modifiedAt: model.modified_at
+            }))
+
+            console.log('成功獲取模型列表:', models)
+            return models
+        } catch (error) {
+            console.error('獲取模型列表失敗:', error.message)
+            console.error('錯誤詳情:', error)
+
+            // 如果是連接錯誤，拋出錯誤而不是返回備用列表
+            if (error.code === 'ECONNREFUSED' || error.response?.status === 0) {
+                throw new Error('Ollama 服務未運行，請啟動 Ollama 服務')
+            }
+
+            // 如果是其他錯誤，也拋出錯誤
+            throw new Error(`獲取模型列表失敗: ${error.message}`)
+        }
+    }
+
+    // 生成回應
+    async generateResponse({ message, history = [], settings = {} }) {
+        const {
+            model = 'llama2',
+            temperature = 0.7,
+            maxTokens = 2048,
+            systemPrompt = '你是一個有用的AI助手，請用繁體中文回答用戶的問題。'
+        } = settings
+
+        try {
+            // 構建完整的對話歷史
+            const messages = []
+
+            // 添加系統提示
+            if (systemPrompt) {
+                messages.push({
+                    role: 'system',
+                    content: systemPrompt
+                })
+            }
+
+            // 添加歷史對話
+            history.forEach(msg => {
+                messages.push({
+                    role: msg.role,
+                    content: msg.content
+                })
+            })
+
+            // 添加當前用戶消息
+            messages.push({
+                role: 'user',
+                content: message
+            })
+
+            // 準備請求數據
+            const requestData = {
+                model: model,
+                messages: messages,
+                stream: false,
+                options: {
+                    temperature: parseFloat(temperature),
+                    num_predict: parseInt(maxTokens),
+                    num_ctx: parseInt(maxTokens),
+                    top_p: parseFloat(settings?.topP || 0.9),
+                    top_k: parseInt(settings?.topK || 40),
+                    repeat_penalty: 1.1
+                }
+            }
+
+            console.log('發送請求到 Ollama:', {
+                model: requestData.model,
+                messageCount: messages.length,
+                temperature: requestData.options.temperature
+            })
+
+            const response = await this.client.post('/api/chat', requestData)
+
+            if (response.data && response.data.message) {
+                return response.data.message.content
+            } else {
+                throw new Error('無效的回應格式')
+            }
+
+        } catch (error) {
+            console.error('Ollama 生成回應失敗:', error.message)
+
+            if (error.code === 'ECONNREFUSED') {
+                throw new Error('無法連接到 Ollama 服務，請確保 Ollama 正在運行 (http://localhost:11434)')
+            }
+
+            if (error.response?.status === 404) {
+                throw new Error(`模型 '${model}' 未找到，請確保模型已下載`)
+            }
+
+            if (error.response?.status === 400) {
+                throw new Error(`請求參數錯誤: ${error.response.data?.error || error.message}`)
+            }
+
+            throw new Error(`Ollama 錯誤: ${error.message}`)
+        }
+    }
+
+    // 流式生成回應（可用於未來的實時聊天）
+    async *generateResponseStream({ message, history = [], settings = {} }) {
+        const {
+            model = 'llama2',
+            temperature = 0.7,
+            maxTokens = 2048,
+            systemPrompt = '你是一個有用的AI助手，請用繁體中文回答用戶的問題。'
+        } = settings
+
+        try {
+            const messages = []
+
+            if (systemPrompt) {
+                messages.push({
+                    role: 'system',
+                    content: systemPrompt
+                })
+            }
+
+            history.forEach(msg => {
+                messages.push({
+                    role: msg.role,
+                    content: msg.content
+                })
+            })
+
+            messages.push({
+                role: 'user',
+                content: message
+            })
+
+            const requestData = {
+                model: model,
+                messages: messages,
+                stream: true,
+                options: {
+                    temperature: parseFloat(temperature),
+                    num_predict: parseInt(maxTokens),
+                    num_ctx: parseInt(maxTokens),
+                    top_p: parseFloat(settings?.topP || 0.9),
+                    top_k: parseInt(settings?.topK || 40),
+                    repeat_penalty: 1.1
+                }
+            }
+
+            const response = await this.client.post('/api/chat', requestData, {
+                responseType: 'stream'
+            })
+
+            const stream = response.data
+
+            return {
+                async *[Symbol.asyncIterator]() {
+                    for await (const chunk of stream) {
+                        const lines = chunk.toString().split('\n').filter(line => line.trim())
+
+                        for (const line of lines) {
+                            try {
+                                const data = JSON.parse(line)
+                                if (data.message?.content) {
+                                    yield data.message.content
+                                }
+                                if (data.done) {
+                                    return
+                                }
+                            } catch (e) {
+                                // 忽略解析錯誤
+                            }
+                        }
+                    }
+                }
+            }
+
+        } catch (error) {
+            console.error('Ollama 流式生成失敗:', error.message)
+            throw error
+        }
+    }
+}
