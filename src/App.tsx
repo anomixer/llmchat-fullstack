@@ -59,6 +59,7 @@ interface Message {
     id: string
     role: 'user' | 'assistant'
     content: string
+    thinking?: string
     timestamp: Date
 }
 
@@ -162,6 +163,9 @@ const App: React.FC = () => {
     // 永遠啟用串流模式
     const streamingModeEnabled = true
     const [streamingMessage, setStreamingMessage] = useState('')
+    const [streamingThinking, setStreamingThinking] = useState('')
+    const [expandedThinking, setExpandedThinking] = useState<Set<string>>(new Set())
+    const [showStreamingThinking, setShowStreamingThinking] = useState(false)
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
@@ -182,6 +186,19 @@ const App: React.FC = () => {
         localStorage.setItem('theme', JSON.stringify(newTheme))
         // 更新 body 類別以應用玻璃擬態主題
         document.body.classList.toggle('dark-theme', newTheme)
+    }
+
+    // 切換thinking展開狀態
+    const toggleThinking = (messageId: string) => {
+        setExpandedThinking(prev => {
+            const newSet = new Set(prev)
+            if (newSet.has(messageId)) {
+                newSet.delete(messageId)
+            } else {
+                newSet.add(messageId)
+            }
+            return newSet
+        })
     }
 
     // 載入可用模型列表 - 支持自定義 API URL
@@ -423,6 +440,9 @@ const App: React.FC = () => {
                 const role = message.role === 'user' ? '用戶' : '助手'
                 content += `## ${role} (${message.timestamp.toLocaleString('zh-TW')})\n\n`
                 content += `${message.content}\n\n`
+                if (message.role === 'assistant' && message.thinking) {
+                    content += `**思考過程：**\n\n${message.thinking}\n\n`
+                }
                 if (index < conversation.messages.length - 1) {
                     content += `---\n\n`
                 }
@@ -486,6 +506,7 @@ const App: React.FC = () => {
         setAttachedFiles([]) // 清除附加檔案
         setIsLoading(true)
         setStreamingMessage('')
+        setStreamingThinking('')
 
         try {
             const currentConversation = conversations.find(c => c.id === conversationId)
@@ -531,7 +552,7 @@ const App: React.FC = () => {
                                 if (data.message?.content) {
                                     setStreamingMessage(prev => prev + data.message.content)
                                 } else if (data.message?.thinking) {
-                                    setStreamingMessage(prev => prev + data.message.thinking)
+                                    setStreamingThinking(prev => prev + data.message.thinking)
                                 }
 
                                 if (data.done) {
@@ -545,20 +566,29 @@ const App: React.FC = () => {
                         }
                     }
 
-                    // 獲取最終的串流消息內容
-                    const finalContent = await new Promise<string>((resolve) => {
-                        setStreamingMessage(current => {
-                            resolve(current)
-                            return current
+                    // 獲取最終的串流消息內容和thinking
+                    const [finalContent, finalThinking] = await Promise.all([
+                        new Promise<string>((resolve) => {
+                            setStreamingMessage(current => {
+                                resolve(current)
+                                return current
+                            })
+                        }),
+                        new Promise<string>((resolve) => {
+                            setStreamingThinking(current => {
+                                resolve(current)
+                                return current
+                            })
                         })
-                    })
+                    ])
 
-                    console.log('Stream completed, final response:', finalContent)
+                    console.log('Stream completed, final response:', finalContent, 'thinking:', finalThinking)
                     // 流式回應完成
                     const assistantMessage: Message = {
                         id: (Date.now() + 1).toString(),
                         role: 'assistant',
                         content: finalContent,
+                        thinking: finalThinking || undefined,
                         timestamp: new Date()
                     }
 
@@ -596,6 +626,7 @@ const App: React.FC = () => {
             setIsLoading(false)
             setIsStreaming(false)
             setStreamingMessage('')
+            setStreamingThinking('')
             // 發送完成後自動聚焦到輸入框
             setTimeout(() => {
                 textareaRef.current?.focus()
@@ -1140,18 +1171,49 @@ const App: React.FC = () => {
                                     }`}>
                                     <p className="whitespace-pre-wrap break-words">{message.content}</p>
                                     {message.role === 'assistant' && (
-                                        <button
-                                            onClick={() => speakText(message.content)}
-                                            className={`mt-2 p-1 rounded transition-colors ${isSpeaking
-                                                ? 'text-green-500'
-                                                : isDarkMode
-                                                    ? 'text-gray-400 hover:text-green-400 hover:bg-gray-700'
-                                                    : 'text-gray-500 hover:text-green-600 hover:bg-gray-100'
-                                                }`}
-                                            title={isSpeaking ? '停止語音' : '語音播放'}
-                                        >
-                                            {isSpeaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-                                        </button>
+                                        <>
+                                            <button
+                                                onClick={() => speakText(message.content)}
+                                                className={`mt-2 p-1 rounded transition-colors ${isSpeaking
+                                                    ? 'text-green-500'
+                                                    : isDarkMode
+                                                        ? 'text-gray-400 hover:text-green-400 hover:bg-gray-700'
+                                                        : 'text-gray-500 hover:text-green-600 hover:bg-gray-100'
+                                                    }`}
+                                                title={isSpeaking ? '停止語音' : '語音播放'}
+                                            >
+                                                {isSpeaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                                            </button>
+                                            {message.thinking && (
+                                                <div className="mt-3 border-t border-gray-200 dark:border-gray-600 pt-3">
+                                                    <button
+                                                        onClick={() => toggleThinking(message.id)}
+                                                        className={`flex items-center space-x-2 text-sm font-medium transition-colors ${isDarkMode
+                                                            ? 'text-gray-400 hover:text-gray-200'
+                                                            : 'text-gray-600 hover:text-gray-800'
+                                                            }`}
+                                                    >
+                                                        <span>思考過程</span>
+                                                        <svg
+                                                            className={`w-4 h-4 transition-transform ${expandedThinking.has(message.id) ? 'rotate-90' : ''}`}
+                                                            fill="none"
+                                                            stroke="currentColor"
+                                                            viewBox="0 0 24 24"
+                                                        >
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                                        </svg>
+                                                    </button>
+                                                    {expandedThinking.has(message.id) && (
+                                                        <div className={`mt-2 p-3 rounded-md text-sm transition-colors ${isDarkMode
+                                                            ? 'bg-gray-700 text-gray-300 border border-gray-600'
+                                                            : 'bg-gray-50 text-gray-700 border border-gray-200'
+                                                            }`}>
+                                                            <pre className="whitespace-pre-wrap break-words font-mono text-xs">{message.thinking}</pre>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </>
                                     )}
                                 </div>
                                 <p className={`text-xs mt-1 transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'
@@ -1183,7 +1245,7 @@ const App: React.FC = () => {
                     </div>
                 )}
                 {isStreaming && (() => {
-                    console.log('Rendering streaming UI, message:', streamingMessage)
+                    console.log('Rendering streaming UI, message:', streamingMessage, 'thinking:', streamingThinking)
                     return (
                         <div className="flex items-start space-x-3">
                             <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${isDarkMode
@@ -1203,6 +1265,35 @@ const App: React.FC = () => {
                                         <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
                                         <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                                     </div>
+                                    {streamingThinking && (
+                                        <div className="mt-3 border-t border-gray-200 dark:border-gray-600 pt-3">
+                                            <button
+                                                onClick={() => setShowStreamingThinking(!showStreamingThinking)}
+                                                className={`flex items-center space-x-2 text-sm font-medium transition-colors ${isDarkMode
+                                                    ? 'text-gray-400 hover:text-gray-200'
+                                                    : 'text-gray-600 hover:text-gray-800'
+                                                    }`}
+                                            >
+                                                <span>思考過程</span>
+                                                <svg
+                                                    className={`w-4 h-4 transition-transform ${showStreamingThinking ? 'rotate-90' : ''}`}
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    viewBox="0 0 24 24"
+                                                >
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                                </svg>
+                                            </button>
+                                            {showStreamingThinking && (
+                                                <div className={`mt-2 p-3 rounded-md text-sm transition-colors ${isDarkMode
+                                                    ? 'bg-gray-700 text-gray-300 border border-gray-600'
+                                                    : 'bg-gray-50 text-gray-700 border border-gray-200'
+                                                    }`}>
+                                                    <pre className="whitespace-pre-wrap break-words font-mono text-xs">{streamingThinking}</pre>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
