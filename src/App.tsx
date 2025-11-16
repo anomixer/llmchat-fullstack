@@ -81,13 +81,23 @@ interface ChatSettings {
 }
 
 const App: React.FC = () => {
-    const [conversations, setConversations] = useState<Conversation[]>(() => {
+    // 創建初始對話
+    const createInitialConversation = (): Conversation => ({
+        id: Date.now().toString(),
+        title: `對話 1`,
+        messages: [],
+        createdAt: new Date(),
+        updatedAt: new Date()
+    })
+
+    // 初始化對話列表
+    const initialConversations = (() => {
         try {
             const saved = localStorage.getItem('conversations')
             if (saved) {
                 const parsed = JSON.parse(saved)
                 // 確保Date對象正確解析
-                return parsed.map((conv: any) => ({
+                const parsedConversations = parsed.map((conv: any) => ({
                     ...conv,
                     createdAt: new Date(conv.createdAt),
                     updatedAt: new Date(conv.updatedAt),
@@ -96,20 +106,29 @@ const App: React.FC = () => {
                         timestamp: new Date(msg.timestamp)
                     }))
                 }))
+                if (parsedConversations.length > 0) {
+                    return parsedConversations
+                }
             }
-            return []
+            return [createInitialConversation()]
         } catch (error) {
             console.error('Error loading conversations from localStorage:', error)
-            return []
+            return [createInitialConversation()]
         }
-    })
+    })()
+
+    const [conversations, setConversations] = useState<Conversation[]>(initialConversations)
+
     const [currentConversationId, setCurrentConversationId] = useState<string>(() => {
         try {
             const saved = localStorage.getItem('currentConversationId')
-            return saved || ''
+            if (saved && initialConversations.some((c: Conversation) => c.id === saved)) {
+                return saved
+            }
+            return initialConversations[0].id
         } catch (error) {
             console.error('Error loading currentConversationId from localStorage:', error)
-            return ''
+            return initialConversations[0].id
         }
     })
     const [input, setInput] = useState('')
@@ -161,6 +180,8 @@ const App: React.FC = () => {
         const newTheme = !isDarkMode
         setIsDarkMode(newTheme)
         localStorage.setItem('theme', JSON.stringify(newTheme))
+        // 更新 body 類別以應用玻璃擬態主題
+        document.body.classList.toggle('dark-theme', newTheme)
     }
 
     // 載入可用模型列表 - 支持自定義 API URL
@@ -206,6 +227,11 @@ const App: React.FC = () => {
             textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
         }
     }, [input])
+
+    // 初始化主題類別
+    useEffect(() => {
+        document.body.classList.toggle('dark-theme', isDarkMode)
+    }, [isDarkMode])
 
     // 保存對話到本地存儲
     useEffect(() => {
@@ -421,37 +447,10 @@ const App: React.FC = () => {
     const sendStreamingMessage = async () => {
         if ((!input.trim() && attachedFiles.length === 0) || isLoading) return
 
-        // 如果沒有當前對話，創建一個新的
-        let conversationId = currentConversationId
-        if (!conversationId) {
-            const newConversation: Conversation = {
-                id: Date.now().toString(),
-                title: `對話 ${conversations.length + 1}`,
-                messages: [],
-                createdAt: new Date(),
-                updatedAt: new Date()
-            }
-            setConversations(prev => [...prev, newConversation])
-            conversationId = newConversation.id
-            setCurrentConversationId(conversationId)
-        }
-
         // 處理附加檔案
         let messageContent = input.trim()
         if (attachedFiles.length > 0) {
-            try {
-                const fileContents = await Promise.all(
-                    attachedFiles.map(async (file) => {
-                        const content = await readFileContent(file)
-                        return `[${file.name}]\n${content}`
-                    })
-                )
-                messageContent = messageContent + '\n\n' + fileContents.join('\n\n---\n\n')
-            } catch (error) {
-                console.error('Error reading files:', error)
-                alert('讀取檔案時發生錯誤')
-                return
-            }
+            messageContent = messageContent + '\n\n[附加檔案: ' + attachedFiles.map(f => f.name).join(', ') + ']'
         }
 
         const userMessage: Message = {
@@ -461,12 +460,27 @@ const App: React.FC = () => {
             timestamp: new Date()
         }
 
-        // 更新對話消息
-        setConversations(prev => prev.map(c =>
-            c.id === conversationId
-                ? { ...c, messages: [...c.messages, userMessage], updatedAt: new Date() }
-                : c
-        ))
+        // 如果沒有當前對話，創建一個新的並包含用戶消息
+        let conversationId = currentConversationId
+        if (!conversationId) {
+            const newConversation: Conversation = {
+                id: Date.now().toString(),
+                title: `對話 ${conversations.length + 1}`,
+                messages: [userMessage],
+                createdAt: new Date(),
+                updatedAt: new Date()
+            }
+            setConversations(prev => [...prev, newConversation])
+            setCurrentConversationId(newConversation.id)
+            conversationId = newConversation.id
+        } else {
+            // 更新現有對話消息
+            setConversations(prev => prev.map(c =>
+                c.id === conversationId
+                    ? { ...c, messages: [...c.messages, userMessage], updatedAt: new Date() }
+                    : c
+            ))
+        }
 
         setInput('')
         setAttachedFiles([]) // 清除附加檔案
@@ -516,6 +530,8 @@ const App: React.FC = () => {
 
                                 if (data.message?.content) {
                                     setStreamingMessage(prev => prev + data.message.content)
+                                } else if (data.message?.thinking) {
+                                    setStreamingMessage(prev => prev + data.message.thinking)
                                 }
 
                                 if (data.done) {
@@ -592,15 +608,6 @@ const App: React.FC = () => {
         loadAvailableModels()
     }, [])
 
-    // 初始化：如果沒有對話，創建一個新的
-    useEffect(() => {
-        if (conversations.length === 0) {
-            const timeoutId = setTimeout(() => {
-                createNewConversation()
-            }, 100) // 延遲執行，避免初始化衝突
-            return () => clearTimeout(timeoutId)
-        }
-    }, [conversations.length])
 
     // 鍵盤快捷鍵
     useEffect(() => {
@@ -705,8 +712,7 @@ const App: React.FC = () => {
     }
 
     return (
-        <div className={`flex flex-col h-screen transition-colors ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'
-            }`}>
+        <div className="flex flex-col h-full transition-colors">
             {/* Header */}
             <div className={`shadow-sm border-b px-4 py-3 flex items-center justify-between transition-colors ${isDarkMode
                 ? 'bg-gray-800 border-gray-700'
@@ -715,9 +721,36 @@ const App: React.FC = () => {
                 <div className="flex items-center space-x-2">
                     <Bot className={`h-6 w-6 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`} />
                     <h1 className={`text-xl font-semibold transition-colors ${isDarkMode ? 'text-white' : 'text-gray-900'
-                        }`}>Local LLM Chat</h1>
+                        }`}>LLMChat</h1>
+                    <button
+                        onClick={() => setShowSettings(!showSettings)}
+                        className={`px-2 py-1 text-xs rounded-md transition-colors cursor-pointer ${isDarkMode
+                            ? 'bg-gray-700 text-gray-300 border border-gray-600 hover:bg-gray-600'
+                            : 'bg-gray-100 text-gray-600 border border-gray-300 hover:bg-gray-200'
+                            }`}
+                        title="點擊開啟設定"
+                    >
+                        {settings.model || '未選擇模型'}
+                    </button>
                 </div>
                 <div className="flex items-center space-x-2">
+                    {/* GitHub 連結 */}
+                    <a
+                        href="https://github.com/anomixer/llmchat"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`p-1 rounded transition-colors ${isDarkMode
+                            ? 'text-gray-400 hover:text-gray-200'
+                            : 'text-gray-500 hover:text-gray-700'
+                            }`}
+                        title="在 GitHub 上查看"
+                    >
+                        <img
+                            src="/github.svg"
+                            alt="GitHub"
+                            className={`h-5 w-5 ${isDarkMode ? 'filter invert' : ''}`}
+                        />
+                    </a>
                     {/* 對話列表按鈕 */}
                     <button
                         onClick={() => setShowConversations(!showConversations)}
@@ -1070,12 +1103,13 @@ const App: React.FC = () => {
             {/* Messages */}
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
                 {currentMessages.length === 0 ? (
-                    <div className={`text-center mt-12 transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'
+                    <div className={`text-center mt-12 transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-700'
                         }`}>
-                        <Bot className={`h-12 w-12 mx-auto mb-4 ${isDarkMode ? 'text-gray-600' : 'text-gray-300'
+                        <Bot className={`h-12 w-12 mx-auto mb-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-300'
                             }`} />
-                        <p className="text-lg">開始與 AI 對話吧！</p>
-                        <p className="text-sm">輸入您的問題，我會盡力為您回答。</p>
+                        <p className="text-lg mb-2">開始與 AI 對話吧！</p>
+                        <p className="text-sm">輸入或說出您的問題，我會盡力為您回答。</p>
+                        <p className="text-sm">您也可以上傳檔案，我來幫您分析與歸納。</p>
                     </div>
                 ) : (
                     currentMessages.map((message) => (

@@ -68,7 +68,7 @@ export class OllamaProvider {
             model = 'llama2',
             temperature = 0.7,
             maxTokens = 2048,
-            systemPrompt = '你是一個有用的AI助手，請用繁體中文回答用戶的問題。'
+            systemPrompt = '你是一個有用的AI助手，請簡潔地用繁體中文回答用戶的問題。'
         } = settings
 
         try {
@@ -150,7 +150,7 @@ export class OllamaProvider {
             model = 'llama2',
             temperature = 0.7,
             maxTokens = 2048,
-            systemPrompt = '你是一個有用的AI助手，請用繁體中文回答用戶的問題。'
+            systemPrompt = '你是一個有用的AI助手，請簡潔地用繁體中文回答用戶的問題。'
         } = settings
 
         try {

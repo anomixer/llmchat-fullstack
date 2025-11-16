@@ -2,6 +2,48 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 全域樣式 - 玻璃擬態與漸層背景 */
+body {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    margin: 0;
+    box-sizing: border-box;
+    font-size: 1.125rem;
+    /* 18px - medium-large font size */
+}
+
+
+#root {
+    /* 玻璃擬態效果 - 淺色主題 */
+    background: rgba(255, 255, 255, 0.25);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 20px;
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+    width: 100%;
+    max-width: 98vw;
+    height: 94vh;
+    overflow: hidden;
+    /* 確保內容居中 */
+    display: flex;
+    flex-direction: column;
+}
+
+/* 深色主題玻璃擬態 */
+body.dark-theme #root {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+
 /* 自定義樣式 */
 @layer components {
     .chat-message {
@@ -31,15 +73,37 @@
 }
 
 .chat-container::-webkit-scrollbar-track {
-    background: #f1f1f1;
+    background: rgba(255, 255, 255, 0.1);
     border-radius: 3px;
 }
 
 .chat-container::-webkit-scrollbar-thumb {
-    background: #c1c1c1;
+    background: rgba(255, 255, 255, 0.3);
     border-radius: 3px;
 }
 
 .chat-container::-webkit-scrollbar-thumb:hover {
-    background: #a8a8a8;
+    background: rgba(255, 255, 255, 0.5);
+}
+
+/* 移動端響應式調整 */
+@media (max-width: 640px) {
+    body {
+        padding: 10px;
+    }
+
+    h1 {
+        font-size: 2rem;
+        margin-bottom: 15px;
+    }
+
+    #root {
+        height: 95vh;
+        border-radius: 15px;
+    }
+
+    footer {
+        margin-top: 15px;
+        font-size: 0.8rem;
+    }
 }
