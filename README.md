@@ -68,11 +68,6 @@ npm install
 > npm install --legacy-peer-deps
 > ```
 
-> **注意**: 如果遇到依賴安裝問題，請嘗試：
-> ```bash
-> npm install --legacy-peer-deps
-> ```
-
 ### 2. 啟動 Ollama
 
 確保您的系統已安裝並啟動 Ollama：
@@ -160,7 +155,7 @@ OLLAMA_API_URL=http://localhost:11434
 OLLAMA_API_KEY=your_api_key_here
 ```
 
-> **注意**: 環境變數會自動載入，前端設定面板會預填這些值，但用戶仍可修改並保存到本地存儲。
+> **注意**: 環境變數會自動載入，前端設定面板會預填這些值，但用戶仍可修改並保存到本地儲存。
 
 ### 前端設定
 
