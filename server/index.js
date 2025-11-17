@@ -200,6 +200,7 @@ app.listen(PORT, () => {
     console.log(`🔧 配置:`)
     console.log(`   - Ollama API URL: ${defaultApiUrl}`)
     console.log(`   - API Key: ${defaultApiKey ? '已設定' : '未設定'}`)
+    console.log(`   - VITE_ALLOWED_HOSTS: ${process.env.VITE_ALLOWED_HOSTS || '未設定'}`)
 
     // 測試 Ollama 連接
     ollamaProvider.checkConnection()
