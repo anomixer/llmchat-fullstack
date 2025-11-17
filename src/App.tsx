@@ -61,6 +61,7 @@ interface Message {
     content: string
     thinking?: string
     timestamp: Date
+    expandedFiles?: boolean
 }
 
 interface Conversation {
@@ -151,7 +152,7 @@ const App: React.FC = () => {
         model: '',
         temperature: 0.7,
         maxTokens: 8192,
-        apiUrl: 'http://localhost:11434',
+        apiUrl: '',
         apiKey: '',
         topP: 0.9,
         topK: 40
@@ -165,6 +166,7 @@ const App: React.FC = () => {
     const [streamingMessage, setStreamingMessage] = useState('')
     const [streamingThinking, setStreamingThinking] = useState('')
     const [expandedThinking, setExpandedThinking] = useState<Set<string>>(new Set())
+    const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set())
     const [showStreamingThinking, setShowStreamingThinking] = useState(false)
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -199,6 +201,41 @@ const App: React.FC = () => {
             }
             return newSet
         })
+    }
+
+    // 切換檔案展開狀態
+    const toggleFiles = (messageId: string) => {
+        setExpandedFiles(prev => {
+            const newSet = new Set(prev)
+            if (newSet.has(messageId)) {
+                newSet.delete(messageId)
+            } else {
+                newSet.add(messageId)
+            }
+            return newSet
+        })
+    }
+
+    // 載入預設配置
+    const loadDefaultConfig = async () => {
+        try {
+            const response = await fetch('/api/config')
+            if (response.ok) {
+                const config = await response.json()
+                setSettings(prev => ({
+                    ...prev,
+                    apiUrl: prev.apiUrl || config.apiUrl,
+                    apiKey: prev.apiKey || (config.apiKey === 'configured' ? '' : config.apiKey)
+                }))
+            }
+        } catch (error) {
+            console.error('Error loading default config:', error)
+            // 如果載入失敗，使用預設值
+            setSettings(prev => ({
+                ...prev,
+                apiUrl: prev.apiUrl || 'http://localhost:11434'
+            }))
+        }
     }
 
     // 載入可用模型列表 - 支持自定義 API URL
@@ -634,9 +671,11 @@ const App: React.FC = () => {
         }
     }
 
-    // 組件掛載時載入模型列表
+    // 組件掛載時載入預設配置和模型列表
     useEffect(() => {
-        loadAvailableModels()
+        loadDefaultConfig().then(() => {
+            loadAvailableModels()
+        })
     }, [])
 
 
@@ -951,9 +990,9 @@ const App: React.FC = () => {
                     ? 'bg-gray-800 border-gray-700'
                     : 'bg-white border-gray-200'
                     }`}>
-                    <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         {/* 左側：LLM 配置 */}
-                        <div className="lg:col-span-3 space-y-4">
+                        <div className="space-y-4">
                             <h3 className={`text-sm font-semibold transition-colors ${isDarkMode ? 'text-gray-200' : 'text-gray-800'
                                 }`}>
                                 LLM 配置
@@ -962,7 +1001,7 @@ const App: React.FC = () => {
                             <div>
                                 <label className={`block text-sm font-medium mb-1 transition-colors ${isDarkMode ? 'text-gray-300' : 'text-gray-700'
                                     }`}>
-                                    API URL
+                                    API URL (Ollama/OpenAI API 地址)
                                 </label>
                                 <input
                                     type="text"
@@ -974,16 +1013,12 @@ const App: React.FC = () => {
                                         : 'bg-white border-gray-300'
                                         }`}
                                 />
-                                <p className={`text-xs mt-1 transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'
-                                    }`}>
-                                    Ollama/OpenAI API 地址
-                                </p>
                             </div>
 
                             <div>
                                 <label className={`block text-sm font-medium mb-1 transition-colors ${isDarkMode ? 'text-gray-300' : 'text-gray-700'
                                     }`}>
-                                    API Key
+                                    API Key (用於需要驗證的 API 服務)
                                 </label>
                                 <input
                                     type="password"
@@ -995,16 +1030,12 @@ const App: React.FC = () => {
                                         : 'bg-white border-gray-300'
                                         }`}
                                 />
-                                <p className={`text-xs mt-1 transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'
-                                    }`}>
-                                    用於需要驗證的 API 服務
-                                </p>
                             </div>
 
                             <div>
                                 <label className={`block text-sm font-medium mb-1 transition-colors ${isDarkMode ? 'text-gray-300' : 'text-gray-700'
                                     }`}>
-                                    模型 {isLoadingModels && <span className="text-xs text-gray-500">(載入中...)</span>}
+                                    模型 (選擇要使用的 AI 模型) {isLoadingModels && <span className="text-xs text-gray-500">(載入中...)</span>}
                                     {availableModels.length === 0 && !isLoadingModels && (
                                         <span className="text-xs text-red-500 ml-2">(未找到模型)</span>
                                     )}
@@ -1034,7 +1065,7 @@ const App: React.FC = () => {
                         </div>
 
                         {/* 右側：生成參數 */}
-                        <div className="lg:col-span-2 space-y-4">
+                        <div className="space-y-4">
                             <h3 className={`text-sm font-semibold transition-colors ${isDarkMode ? 'text-gray-200' : 'text-gray-800'
                                 }`}>
                                 生成參數
@@ -1043,7 +1074,7 @@ const App: React.FC = () => {
                             <div>
                                 <label className={`block text-sm font-medium mb-1 transition-colors ${isDarkMode ? 'text-gray-300' : 'text-gray-700'
                                     }`}>
-                                    溫度: {settings.temperature}
+                                    溫度: <span className="text-blue-600 dark:text-blue-400 font-semibold">{settings.temperature}</span> (控制輸出的隨機性參數 0-2：低溫=確定、邏輯、一致；高溫=多樣、創造、驚喜)
                                 </label>
                                 <input
                                     type="range"
@@ -1055,16 +1086,12 @@ const App: React.FC = () => {
                                     className={`w-full ${isDarkMode ? 'accent-blue-400' : 'accent-blue-600'
                                         }`}
                                 />
-                                <p className={`text-xs mt-1 transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'
-                                    }`}>
-                                    控制輸出的隨機性 (0-2)
-                                </p>
                             </div>
 
                             <div>
                                 <label className={`block text-sm font-medium mb-1 transition-colors ${isDarkMode ? 'text-gray-300' : 'text-gray-700'
                                     }`}>
-                                    Top P: {settings.topP}
+                                    Top P: <span className="text-blue-600 dark:text-blue-400 font-semibold">{settings.topP}</span> (控制核心採樣的機率參數 0-1：高=高機率；低=低機率)
                                 </label>
                                 <input
                                     type="range"
@@ -1076,16 +1103,12 @@ const App: React.FC = () => {
                                     className={`w-full ${isDarkMode ? 'accent-blue-400' : 'accent-blue-600'
                                         }`}
                                 />
-                                <p className={`text-xs mt-1 transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'
-                                    }`}>
-                                    核心採樣，考慮高概率令牌 (0-1)
-                                </p>
                             </div>
 
                             <div>
                                 <label className={`block text-sm font-medium mb-1 transition-colors ${isDarkMode ? 'text-gray-300' : 'text-gray-700'
                                     }`}>
-                                    Top K: {settings.topK}
+                                    Top K: <span className="text-blue-600 dark:text-blue-400 font-semibold">{settings.topK}</span> (限制候選Token的數量參數 1-100：高=取樣多；低=取樣少)
                                 </label>
                                 <input
                                     type="range"
@@ -1097,33 +1120,23 @@ const App: React.FC = () => {
                                     className={`w-full ${isDarkMode ? 'accent-blue-400' : 'accent-blue-600'
                                         }`}
                                 />
-                                <p className={`text-xs mt-1 transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'
-                                    }`}>
-                                    限制候選令牌數量 (1-100)
-                                </p>
                             </div>
 
                             <div>
                                 <label className={`block text-sm font-medium mb-1 transition-colors ${isDarkMode ? 'text-gray-300' : 'text-gray-700'
                                     }`}>
-                                    最大 Token 數
+                                    最大 Token 數: <span className="text-blue-600 dark:text-blue-400 font-semibold">{settings.maxTokens}</span> (限制生成回應的最大長度 4096-262144)
                                 </label>
                                 <input
-                                    type="number"
-                                    min="100"
+                                    type="range"
+                                    min="4096"
                                     max="262144"
-                                    step="100"
+                                    step="1024"
                                     value={settings.maxTokens}
                                     onChange={(e) => setSettings(prev => ({ ...prev, maxTokens: parseInt(e.target.value) }))}
-                                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${isDarkMode
-                                        ? 'bg-gray-700 border-gray-600 text-white'
-                                        : 'bg-white border-gray-300'
+                                    className={`w-full ${isDarkMode ? 'accent-blue-400' : 'accent-blue-600'
                                         }`}
                                 />
-                                <p className={`text-xs mt-1 transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'
-                                    }`}>
-                                    限制生成回應的最大長度
-                                </p>
                             </div>
 
                         </div>
@@ -1169,7 +1182,48 @@ const App: React.FC = () => {
                                         ? 'bg-gray-800 text-gray-100 border border-gray-700'
                                         : 'bg-white text-gray-900 border border-gray-200'
                                     }`}>
-                                    <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                                    {(() => {
+                                        const lines = message.content.split('\n')
+                                        const fileLineIndex = lines.findIndex(line => line.startsWith('[附加檔案:'))
+                                        const hasFiles = fileLineIndex !== -1
+
+                                        return lines.map((line, index) => {
+                                            if (line.startsWith('[附加檔案:')) {
+                                                return (
+                                                    <div key={index} className="mt-3 border-t border-gray-200 dark:border-gray-600 pt-3">
+                                                        <button
+                                                            onClick={() => toggleFiles(message.id)}
+                                                            className={`flex items-center space-x-2 text-sm font-medium transition-colors ${isDarkMode
+                                                                ? 'text-gray-400 hover:text-gray-200'
+                                                                : 'text-gray-600 hover:text-gray-800'
+                                                                }`}
+                                                        >
+                                                            <span>附加檔案</span>
+                                                            <svg
+                                                                className={`w-4 h-4 transition-transform ${expandedFiles.has(message.id) ? 'rotate-90' : ''}`}
+                                                                fill="none"
+                                                                stroke="currentColor"
+                                                                viewBox="0 0 24 24"
+                                                            >
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                                            </svg>
+                                                        </button>
+                                                        {expandedFiles.has(message.id) && (
+                                                            <div className={`mt-2 p-3 rounded-md text-sm transition-colors ${isDarkMode
+                                                                ? 'bg-gray-700 text-gray-300 border border-gray-600'
+                                                                : 'bg-gray-50 text-gray-700 border border-gray-200'
+                                                                }`}>
+                                                                <pre className="whitespace-pre-wrap break-words font-mono text-xs">{line}</pre>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )
+                                            }
+                                            return (
+                                                <p key={index} className="whitespace-pre-wrap break-words">{line}</p>
+                                            )
+                                        })
+                                    })()}
                                     {message.role === 'assistant' && (
                                         <>
                                             <button

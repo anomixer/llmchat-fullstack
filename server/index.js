@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import { OllamaProvider } from './ollamaProvider.js'
@@ -10,13 +11,23 @@ const PORT = process.env.PORT || 3001
 app.use(cors())
 app.use(express.json())
 
-// 初始化提供者
-const ollamaProvider = new OllamaProvider()
+// 初始化提供者 - 支援環境變數設定
+const defaultApiUrl = process.env.OLLAMA_API_URL || 'http://localhost:11434'
+const defaultApiKey = process.env.OLLAMA_API_KEY || ''
+const ollamaProvider = new OllamaProvider(defaultApiUrl, defaultApiKey)
 const chatProvider = new ChatProvider(ollamaProvider)
 
 // 健康檢查端點
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() })
+})
+
+// 獲取預設配置
+app.get('/api/config', (req, res) => {
+    res.json({
+        apiUrl: defaultApiUrl,
+        apiKey: defaultApiKey ? 'configured' : ''
+    })
 })
 
 // 獲取可用模型 - OpenAI API 相容格式
@@ -186,6 +197,9 @@ app.listen(PORT, () => {
     console.log(`   - GET  /api/models     - 獲取模型列表 (舊格式)`)
     console.log(`   - POST /api/chat       - 聊天`)
     console.log(`   - GET  /api/history    - 聊天歷史`)
+    console.log(`🔧 配置:`)
+    console.log(`   - Ollama API URL: ${defaultApiUrl}`)
+    console.log(`   - API Key: ${defaultApiKey ? '已設定' : '未設定'}`)
 
     // 測試 Ollama 連接
     ollamaProvider.checkConnection()
