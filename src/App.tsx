@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { Send, Bot, User, Settings, Trash2, Moon, Sun, Plus, MessageSquare, Paperclip, X, Mic, MicOff, Volume2, VolumeX, Download } from 'lucide-react'
+import MarkdownMessage from './MarkdownMessage'
 
 // Web Speech API types
 declare global {
@@ -173,12 +174,34 @@ const App: React.FC = () => {
     const fileInputRef = useRef<HTMLInputElement>(null)
     const recognitionRef = useRef<SpeechRecognition | null>(null)
     const synthRef = useRef<SpeechSynthesis | null>(null)
+    const messagesContainerRef = useRef<HTMLDivElement>(null)
+    const [shouldAutoScroll, setShouldAutoScroll] = useState(true)
 
     // 當前對話的消息
     const currentMessages = conversations.find(c => c.id === currentConversationId)?.messages || []
 
     const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        if (shouldAutoScroll) {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        }
+    }
+
+    // 檢查用戶是否在底部附近
+    const isNearBottom = () => {
+        const container = messagesContainerRef.current
+        if (!container) return true
+
+        const threshold = 100 // 距離底部100px內算作底部
+        return container.scrollHeight - container.scrollTop - container.clientHeight < threshold
+    }
+
+    // 處理滾動事件
+    const handleScroll = () => {
+        if (isNearBottom()) {
+            setShouldAutoScroll(true)
+        } else {
+            setShouldAutoScroll(false)
+        }
     }
 
     // 切換主題函數
@@ -274,6 +297,15 @@ const App: React.FC = () => {
     useEffect(() => {
         scrollToBottom()
     }, [streamingMessage])
+
+    // 添加滾動事件監聽器
+    useEffect(() => {
+        const container = messagesContainerRef.current
+        if (container) {
+            container.addEventListener('scroll', handleScroll)
+            return () => container.removeEventListener('scroll', handleScroll)
+        }
+    }, [shouldAutoScroll])
 
     useEffect(() => {
         if (textareaRef.current) {
@@ -793,7 +825,8 @@ const App: React.FC = () => {
                 <div className="flex items-center space-x-2">
                     <Bot className={`h-6 w-6 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`} />
                     <h1 className={`text-xl font-semibold transition-colors ${isDarkMode ? 'text-white' : 'text-gray-900'
-                        }`}>LLMChat</h1>
+                        }`}>LLMChat <span className={`text-xs font-extralight transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-500'
+                            }`}>v1.2.0</span></h1>
                     <button
                         onClick={() => setShowSettings(prev => !prev)}
                         className={`px-2 py-1 text-xs rounded-md transition-colors cursor-pointer ${isDarkMode
@@ -1147,7 +1180,7 @@ const App: React.FC = () => {
             )}
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4 chat-messages">
                 {currentMessages.length === 0 ? (
                     <div className={`text-center mt-12 transition-colors ${isDarkMode ? 'text-gray-400' : 'text-gray-700'
                         }`}>
@@ -1176,9 +1209,9 @@ const App: React.FC = () => {
                                     <Bot className="h-4 w-4" />
                                 )}
                             </div>
-                            <div className={`flex-1 max-w-3xl ${message.role === 'user' ? 'text-right' : ''
+                            <div className={`flex-1 max-w-[90%] ${message.role === 'user' ? 'text-right' : ''
                                 }`}>
-                                <div className={`inline-block px-4 py-2 rounded-lg transition-colors ${message.role === 'user'
+                                <div className={`inline-block px-4 py-2 rounded-lg transition-colors chat-message-content ${message.role === 'user'
                                     ? 'bg-blue-600 text-white'
                                     : isDarkMode
                                         ? 'bg-gray-800 text-gray-100 border border-gray-700'
@@ -1189,47 +1222,60 @@ const App: React.FC = () => {
                                         const fileLineIndex = lines.findIndex(line => line.startsWith('[附加檔案:'))
                                         const hasFiles = fileLineIndex !== -1
 
-                                        return lines.map((line, index) => {
-                                            if (line.startsWith('[附加檔案:')) {
-                                                return (
-                                                    <div key={index} className={`mt-3 border-t pt-3 ${message.role === 'user'
-                                                        ? (isDarkMode ? 'border-blue-200' : 'border-blue-100')
-                                                        : 'border-gray-200 dark:border-gray-600'
-                                                        }`}>
-                                                        <button
-                                                            onClick={() => toggleFiles(message.id)}
-                                                            className={`flex items-center space-x-2 text-sm font-medium transition-colors ${message.role === 'user'
-                                                                ? (isDarkMode ? 'text-blue-200 hover:text-blue-100' : 'text-blue-100 hover:text-white')
-                                                                : (isDarkMode
-                                                                    ? 'text-gray-400 hover:text-gray-200'
-                                                                    : 'text-gray-600 hover:text-gray-800')
-                                                                }`}
-                                                        >
-                                                            <span>附加檔案</span>
-                                                            <svg
-                                                                className={`w-4 h-4 transition-transform ${expandedFiles.has(message.id) ? 'rotate-90' : ''}`}
-                                                                fill="none"
-                                                                stroke="currentColor"
-                                                                viewBox="0 0 24 24"
-                                                            >
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                                            </svg>
-                                                        </button>
-                                                        {expandedFiles.has(message.id) && (
-                                                            <div className={`mt-2 p-3 rounded-md text-sm transition-colors ${isDarkMode
-                                                                ? 'bg-gray-700 text-gray-300 border border-gray-600'
-                                                                : 'bg-gray-100 text-gray-800 border border-gray-300'
+                                        // 分離內容和檔案部分
+                                        const contentLines = hasFiles ? lines.slice(0, fileLineIndex) : lines
+                                        const fileLines = hasFiles ? lines.slice(fileLineIndex) : []
+
+                                        return (
+                                            <>
+                                                {/* 主要內容使用Markdown渲染 */}
+                                                <MarkdownMessage
+                                                    content={contentLines.join('\n')}
+                                                    isDarkMode={isDarkMode}
+                                                />
+
+                                                {/* 附加檔案部分 */}
+                                                {fileLines.map((line, index) => {
+                                                    if (line.startsWith('[附加檔案:')) {
+                                                        return (
+                                                            <div key={index} className={`mt-3 border-t pt-3 ${message.role === 'user'
+                                                                ? (isDarkMode ? 'border-blue-200' : 'border-blue-100')
+                                                                : 'border-gray-200 dark:border-gray-600'
                                                                 }`}>
-                                                                <pre className="whitespace-pre-wrap break-words font-mono text-xs">{line}</pre>
+                                                                <button
+                                                                    onClick={() => toggleFiles(message.id)}
+                                                                    className={`flex items-center space-x-2 text-sm font-medium transition-colors ${message.role === 'user'
+                                                                        ? (isDarkMode ? 'text-blue-200 hover:text-blue-100' : 'text-blue-100 hover:text-white')
+                                                                        : (isDarkMode
+                                                                            ? 'text-gray-400 hover:text-gray-200'
+                                                                            : 'text-gray-600 hover:text-gray-800')
+                                                                        }`}
+                                                                >
+                                                                    <span>附加檔案</span>
+                                                                    <svg
+                                                                        className={`w-4 h-4 transition-transform ${expandedFiles.has(message.id) ? 'rotate-90' : ''}`}
+                                                                        fill="none"
+                                                                        stroke="currentColor"
+                                                                        viewBox="0 0 24 24"
+                                                                    >
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                                                    </svg>
+                                                                </button>
+                                                                {expandedFiles.has(message.id) && (
+                                                                    <div className={`mt-2 p-3 rounded-md text-sm transition-colors ${isDarkMode
+                                                                        ? 'bg-gray-700 text-gray-300 border border-gray-600'
+                                                                        : 'bg-gray-100 text-gray-800 border border-gray-300'
+                                                                        }`}>
+                                                                        <pre className="whitespace-pre-wrap break-words font-mono text-xs">{line}</pre>
+                                                                    </div>
+                                                                )}
                                                             </div>
-                                                        )}
-                                                    </div>
-                                                )
-                                            }
-                                            return (
-                                                <p key={index} className={`whitespace-pre-wrap break-words ${line.startsWith('[附加檔案:') ? (isDarkMode ? 'text-gray-300' : 'text-gray-600') : ''}`}>{line}</p>
-                                            )
-                                        })
+                                                        )
+                                                    }
+                                                    return null
+                                                })}
+                                            </>
+                                        )
                                     })()}
                                     {message.role === 'assistant' && (
                                         <>
@@ -1315,12 +1361,15 @@ const App: React.FC = () => {
                                 }`}>
                                 <Bot className="h-4 w-4" />
                             </div>
-                            <div className={`flex-1 max-w-3xl transition-colors`}>
+                            <div className={`flex-1 max-w-[90%] transition-colors`}>
                                 <div className={`inline-block px-4 py-2 rounded-lg transition-colors ${isDarkMode
                                     ? 'bg-gray-800 text-gray-100 border border-gray-700'
                                     : 'bg-white text-gray-900 border border-gray-200'
                                     }`}>
-                                    <p className="whitespace-pre-wrap break-words">{streamingMessage || '正在生成回應...'}</p>
+                                    <MarkdownMessage
+                                        content={streamingMessage || '正在生成回應...'}
+                                        isDarkMode={isDarkMode}
+                                    />
                                     <div className="flex space-x-1 mt-2">
                                         <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
                                         <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>

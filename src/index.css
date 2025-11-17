@@ -91,6 +91,20 @@ body.dark-theme #root {
     background: rgba(255, 255, 255, 0.5);
 }
 
+/* 防止橫向滾動 */
+.chat-messages {
+    overflow-x: hidden;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.chat-message-content {
+    max-width: 100%;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    white-space: pre-wrap;
+}
+
 /* 移動端響應式調整 */
 @media (max-width: 640px) {
     body {
