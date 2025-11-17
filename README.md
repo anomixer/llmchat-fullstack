@@ -158,7 +158,7 @@ cp .env.example .env
 ```env
 OLLAMA_API_URL=http://localhost:11434
 OLLAMA_API_KEY=your_api_key_here
-VITE_ALLOWED_HOSTS=localhost,127.0.0.1,llmchat.example.com
+VITE_ALLOWED_HOSTS=llmchat.example.com,your-domain.com
 ```
 
 > **注意**: 環境變數會自動載入，前端設定面板會預填這些值，但用戶仍可修改並保存到本地儲存。VITE_ALLOWED_HOSTS 用於配置 Vite 開發服務器允許訪問的主機，解決跨域訪問問題。
