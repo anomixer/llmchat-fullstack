@@ -1190,12 +1190,17 @@ const App: React.FC = () => {
                                         return lines.map((line, index) => {
                                             if (line.startsWith('[附加檔案:')) {
                                                 return (
-                                                    <div key={index} className="mt-3 border-t border-gray-200 dark:border-gray-600 pt-3">
+                                                    <div key={index} className={`mt-3 border-t pt-3 ${message.role === 'user'
+                                                        ? (isDarkMode ? 'border-blue-200' : 'border-blue-100')
+                                                        : 'border-gray-200 dark:border-gray-600'
+                                                        }`}>
                                                         <button
                                                             onClick={() => toggleFiles(message.id)}
-                                                            className={`flex items-center space-x-2 text-sm font-medium transition-colors ${isDarkMode
-                                                                ? 'text-gray-400 hover:text-gray-200'
-                                                                : 'text-gray-600 hover:text-gray-800'
+                                                            className={`flex items-center space-x-2 text-sm font-medium transition-colors ${message.role === 'user'
+                                                                ? (isDarkMode ? 'text-blue-200 hover:text-blue-100' : 'text-blue-100 hover:text-white')
+                                                                : (isDarkMode
+                                                                    ? 'text-gray-400 hover:text-gray-200'
+                                                                    : 'text-gray-600 hover:text-gray-800')
                                                                 }`}
                                                         >
                                                             <span>附加檔案</span>
@@ -1211,7 +1216,7 @@ const App: React.FC = () => {
                                                         {expandedFiles.has(message.id) && (
                                                             <div className={`mt-2 p-3 rounded-md text-sm transition-colors ${isDarkMode
                                                                 ? 'bg-gray-700 text-gray-300 border border-gray-600'
-                                                                : 'bg-gray-50 text-gray-700 border border-gray-200'
+                                                                : 'bg-gray-100 text-gray-800 border border-gray-300'
                                                                 }`}>
                                                                 <pre className="whitespace-pre-wrap break-words font-mono text-xs">{line}</pre>
                                                             </div>
@@ -1220,7 +1225,7 @@ const App: React.FC = () => {
                                                 )
                                             }
                                             return (
-                                                <p key={index} className="whitespace-pre-wrap break-words">{line}</p>
+                                                <p key={index} className={`whitespace-pre-wrap break-words ${line.startsWith('[附加檔案:') ? (isDarkMode ? 'text-gray-300' : 'text-gray-600') : ''}`}>{line}</p>
                                             )
                                         })
                                     })()}

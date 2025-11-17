@@ -18,6 +18,11 @@ body {
     /* 18px - medium-large font size */
 }
 
+/* 亮色模式使用藍色背景 */
+body:not(.dark-theme) {
+    background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+}
+
 
 #root {
     /* 玻璃擬態效果 - 淺色主題 */
