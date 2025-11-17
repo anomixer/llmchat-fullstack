@@ -1,6 +1,6 @@
 # LLMChat
 
-一個具有玻璃擬態設計的現代化本地大語言模型聊天應用程式，基於 React + Node.js + Ollama，提供美觀且功能完整的聊天體驗。
+一個具有玻璃擬態設計的現代化本地大語言模型聊天應用程式，**純前端架構**直接調用 Ollama API，提供美觀且功能完整的聊天體驗。支援靜態部署到 Vercel、Netlify 等平台。
 
 ## 🌟 功能特色
 
@@ -13,7 +13,9 @@
 - **檔案上傳功能**: 支援上傳文件並以小字顯示檔名，可收合展開，提供對話上下文
 - **語音輸入/輸出**: 支援語音輸入和文字轉語音功能
 - **實時串流回應**: 以實時串流顯示AI回應，提供類似打字機的效果，自動滾動跟隨最新內容
-- **思考過程顯示**: 支援顯示AI的思考過程，可收合展開，支援實時流式顯示
+- **思考過程顯示**: 支援顯示AI的思考過程，可收合展開，支援實時流式顯示（如果模型支援）
+- **環境變數配置**: 支援 `VITE_OLLAMA_API_URL` 和 `VITE_OLLAMA_API_KEY` 環境變數配置
+- **靜態部署支援**: 可部署到 Vercel、Netlify 等靜態託管平台
 - **Markdown 支援**: 完整的 Markdown 語法支援，包括程式碼高亮和格式化顯示
 - **智能滾動控制**: 訊息串流時自動下捲，用戶可隨時往上回捲禁用自動下捲功能，除非捲到底部才重新啟用
 - **程式碼複製功能**: Markdown 中的程式碼區塊提供一鍵複製按鈕，方便使用
@@ -46,11 +48,11 @@
 - **Vite** - 快速建構工具
 - **Lucide React** - 現代化圖示庫
 
-### 後端
-- **Node.js + Express** - API 伺服器
-- **Ollama SDK** - 本地 LLM 整合
-- **CORS** - 跨域資源分享
-- **Axios** - HTTP 客戶端
+### 架構特點
+- **純前端架構** - 直接調用 Ollama API，無需後端服務
+- **靜態部署** - 可部署到 Vercel、Netlify 等靜態託管平台
+- **環境變數配置** - 支援自定義 Ollama API URL 和 Key
+- **CORS 處理** - 需要配置 Ollama 服務器允許跨域訪問
 
 ## 📋 系統需求
 
@@ -70,6 +72,22 @@ npm install
 > ```bash
 > npm install --legacy-peer-deps
 > ```
+
+### 2. 配置環境變數（可選）
+
+複製並編輯環境變數文件：
+
+```bash
+cp .env.example .env
+```
+
+編輯 `.env` 文件設定您的 Ollama 服務器：
+
+```bash
+# Ollama API 配置
+VITE_OLLAMA_API_URL=http://your-ollama-server:11434
+VITE_OLLAMA_API_KEY=your_api_key_here  # 可選
+```
 
 ### 2. 啟動 Ollama
 
@@ -96,173 +114,191 @@ ollama pull gemma3:4b
 ### 4. 啟動應用程式
 
 ```bash
-# 同時啟動前端和後端
 npm run dev
-
-# 或者分別啟動
-# 終端 1 - 啟動後端
-npm run server
-
-# 終端 2 - 啟動前端
-npm run client
 ```
 
 ### 5. 開啟瀏覽器
 
 應用程式將自動在瀏覽器中開啟，或手動訪問：
-- 前端：http://localhost:3000
-- 後端 API：http://localhost:3001
+- 前端：http://localhost:5173
+
+## 🚀 部署
+
+### 本地部署
+```bash
+npm run build
+npm run preview
+```
+
+### ☁️ 靜態託管部署（推薦）
+
+#### Vercel 部署（推薦）
+1. **前往 [vercel.com](https://vercel.com) 註冊帳號**
+2. **連接您的 GitHub 倉庫**
+3. **自動部署**：
+   - Vercel 會自動檢測 Vite 專案
+   - 無需額外配置
+4. **完成！** 您的應用程式會自動部署並獲得 HTTPS 域名
+
+#### Netlify 部署
+1. **前往 [netlify.com](https://netlify.com) 註冊帳號**
+2. **連接您的 GitHub 倉庫**
+3. **自動部署**：
+   - Netlify 會自動檢測專案配置
+   - 使用 `_netlify.toml` 中的設定
+4. **完成！** 您的應用程式會自動部署並獲得 HTTPS 域名
+
+#### 其他選項
+- **GitHub Pages**: 免費，但需要手動配置
+- **Railway**: 支援靜態託管
+- **Render**: 靜態託管選項
+
+#### 部署特點
+
+- **純前端架構**: 只有靜態文件，無服務器
+- **全球 CDN**: 自動獲得 CDN 加速
+- **免費額度充足**: 大多數平台提供免費額度
+- **自動 HTTPS**: 內建 SSL 證書
+- **即時部署**: 推送代碼自動重新部署
+
+#### 環境變數配置
+
+在部署平台設定環境變數：
+
+**Vercel:**
+- 在專案設定 > Environment Variables 中添加：
+  - `VITE_OLLAMA_API_URL`: 您的 Ollama 服務器 URL
+  - `VITE_OLLAMA_API_KEY`: API Key（可選）
+
+**Netlify:**
+- 在 Site settings > Environment variables 中添加相同變數
+
+#### 注意事項
+
+- **Ollama 服務**: 需要一個可訪問的 Ollama 服務器（本地或遠程）
+- **CORS 設置**: 確保 Ollama 服務器允許前端域名訪問
+- **API Key 安全**: API Key 會暴露在前端，建議使用只讀權限
+
+**啟用 Ollama CORS 的方法：**
+```bash
+# 使用環境變數啟動
+OLLAMA_ORIGINS="https://your-frontend-domain.com" ollama serve
+
+# 或修改 Ollama 配置
+# 在 ~/.ollama/ 目錄下創建或編輯配置文件
+```
 
 ## 📁 專案結構
 
 ```
 llmchat/
 ├── src/                   # 前端原始碼
-│   ├── App.tsx            # 主應用元件
+│   ├── App.tsx            # 主應用元件（直接調用 Ollama API）
 │   ├── MarkdownMsg.tsx    # Markdown 渲染組件
 │   ├── main.jsx           # 應用程式入口
-│   └── index.css          # 全域樣式（包含玻璃擬態設計）
-├── server/                # 後端原始碼
-│   ├── index.js           # Express 伺服器
-│   ├── chatProvider.js    # 聊天邏輯
-│   └── ollamaProvider.js  # Ollama 整合
+│   ├── index.css          # 全域樣式（包含玻璃擬態設計）
+│   └── vite-env.d.ts      # Vite 環境變數類型定義
 ├── public/                # 靜態資源
 │   ├── favicon.svg        # 網站圖標
 │   └── github.svg         # GitHub 官方標誌
-├── .env.example           # 環境變數配置範例
+├── .env                   # 環境變數配置（從 .env.example 複製）
+├── .env.example           # 環境變數範例
 ├── index.html             # HTML 模板（簡化設計）
 ├── package.json           # 專案配置
 ├── tsconfig.json          # TypeScript 配置
+├── tsconfig.node.json     # Node.js TypeScript 配置
 ├── vite.config.js         # Vite 配置
 ├── tailwind.config.js     # Tailwind 配置
-└── postcss.config.js      # PostCSS 配置
+├── postcss.config.js      # PostCSS 配置
+├── vercel.json            # Vercel 部署配置
+├── _netlify.toml          # Netlify 部署配置
+└── README.md              # 專案說明
 ```
 
 ## 🔧 配置說明
 
-### 環境變數設定
+### 環境變數配置
 
-應用程式支援通過環境變數配置 Ollama API 設定和 Vite 開發服務器設定。複製 `.env.example` 為 `.env` 並修改：
+應用程式支援以下環境變數配置：
 
 ```bash
-cp .env.example .env
+# Ollama API 配置
+VITE_OLLAMA_API_URL=http://localhost:11434    # Ollama 服務器地址
+VITE_OLLAMA_API_KEY=your_api_key_here         # API Key（可選）
+VITE_ALLOWED_HOSTS=                           # 允許的主機列表（開發用）
 ```
 
-支援的環境變數：
-
-- **OLLAMA_API_URL**: Ollama 服務的 API URL（預設: http://localhost:11434）
-- **OLLAMA_API_KEY**: API 金鑰（如果需要驗證，預設: 空）
-- **VITE_ALLOWED_HOSTS**: Vite 開發服務器允許的主機列表（用逗號分隔，預設: localhost,127.0.0.1）
-
-範例 `.env` 檔案：
-```env
-OLLAMA_API_URL=http://localhost:11434
-OLLAMA_API_KEY=your_api_key_here
-VITE_ALLOWED_HOSTS=llmchat.example.com,your-domain.com
-```
-
-> **注意**: 環境變數會自動載入，前端設定面板會預填這些值，但用戶仍可修改並保存到本地儲存。VITE_ALLOWED_HOSTS 用於配置 Vite 開發服務器允許訪問的主機，解決跨域訪問問題。
+**配置步驟：**
+1. 複製環境變數範例：`cp .env.example .env`
+2. 編輯 `.env` 文件設定您的 Ollama 服務器地址
+3. 重新啟動開發服務器：`npm run dev`
 
 ### 前端設定
 
-在 `src/App.tsx` 中，您可以調整：
+在應用程式設定面板中，您可以調整：
 
-- **LLM模型**: `llama3:8b`, `codellama:7b`, `mistral:7b`, `gemma3:4b`
+- **LLM模型**: 自動從 Ollama 載入可用模型
 - **預設溫度**: 0.7 (0.0-2.0，低溫=確定、邏輯、一致；高溫=多樣、創造、驚喜)
 - **最大 Context 數**: 8192 (範圍: 4096-262144)
 - **Top P**: 0.9 (0.0-1.0，高=高機率；低=低機率)
 - **Top K**: 40 (1-100，高=取樣多；低=取樣少)
-- **UI 佈局**: 左右設定面板各佔50%
 - **系統提示**: 自定義 AI 行為
-- **串流模式**: 自定啟用，提供實時回應體驗
+- **串流模式**: 永遠啟用，提供實時回應體驗
 
-### 後端設定
+### Ollama 服務配置
 
-在 `server/index.js` 中，您可以調整：
+由於是純前端架構，您需要確保 Ollama 服務器配置正確：
 
-- **服務端埠口**: 預設 3001
-- **CORS 設定**: 跨域訪問控制
-- **請求超時**: 30秒
-- **環境變數**: 支援 OLLAMA_API_URL 和 OLLAMA_API_KEY
+- **啟用 CORS**: Ollama 需要允許前端域名訪問
+- **網路訪問**: 確保 Ollama 服務器可以從外部訪問
+- **安全考慮**: API Key 會暴露在前端，建議使用只讀權限
 
-在 `server/ollamaProvider.js` 中，您可以調整：
+## 🎯 Ollama API 整合
 
-- **Ollama 連接**: 通過環境變數或預設值設定
-- **生成參數**: temperature, top_p, repeat_penalty
-- **Context 控制**: num_ctx 與 maxTokens 同步設定
-- **Token 限制**: num_predict 根據用戶設定動態調整
+應用程式直接調用 Ollama 的標準 API：
 
-## 🎯 API 端點
-
-### GET /api/health
-健康檢查端點
-```json
-{
-  "status": "ok",
-  "timestamp": "2025-11-15T13:17:12.110Z"
-}
-```
-
-### GET /api/config
-獲取預設配置（從環境變數）
-```json
-{
-  "apiUrl": "http://localhost:11434",
-  "apiKey": ""
-}
-```
-
-### GET /api/models
+### GET /api/tags
 獲取可用模型列表
 ```json
 {
   "models": [
     {
-      "name": "llama2",
-      "size": 1234567890,
-      "modifiedAt": "2025-11-15T13:17:12.110Z"
+      "name": "llama3:8b",
+      "size": 4661224676,
+      "modified_at": "2025-11-17T10:00:00.000000Z"
     }
   ]
 }
 ```
 
 ### POST /api/chat
-發送聊天消息
-```json
-{
-  "message": "你好，請自我介紹",
-  "settings": {
-    "model": "llama2",
-    "temperature": 0.7,
-    "maxTokens": 2048
-  },
-  "history": []
-}
-```
-
-### POST /api/chat/stream
 發送串流聊天消息（實時回應）
 ```json
 {
-  "message": "請寫一段關於AI的短文",
-  "settings": {
-    "model": "llama2",
+  "model": "llama3:8b",
+  "messages": [
+    {"role": "system", "content": "你是一個有用的AI助手"},
+    {"role": "user", "content": "你好，請自我介紹"}
+  ],
+  "stream": true,
+  "options": {
     "temperature": 0.7,
-    "maxTokens": 2048
-  },
-  "history": []
+    "num_predict": 8192,
+    "top_p": 0.9,
+    "top_k": 40
+  }
 }
 ```
-回應格式：Server-Sent Events (SSE)
-```
-data: {"message": {"content": "AI"}, "done": false}
-data: {"message": {"content": "是"}, "done": false}
-data: {"message": {"thinking": "思考中..."}, "done": false}
-...
-data: {"done": true}
+
+**回應格式：**
+```json
+{"message":{"content":"你"},"done":false}
+{"message":{"content":"好"},"done":false}
+{"message":{"thinking":"我正在思考如何自我介紹..."},"done":false}
+{"done":true}
 ```
 
-**思考過程支援**: 某些模型（如kimi-k2-thinking）支援顯示AI的思考過程，會在 `message.thinking` 字段中返回。
+**思考過程支援**: 某些模型支援顯示AI的思考過程，會在 `message.thinking` 字段中返回。應用程式會即時顯示思考內容，並支援展開/收起控制。
 
 ## 🛠️ 開發命令
 
@@ -270,14 +306,8 @@ data: {"done": true}
 # 安裝依賴
 npm install
 
-# 開發模式（同時啟動前後端）
+# 開發模式
 npm run dev
-
-# 僅啟動前端
-npm run client
-
-# 僅啟動後端
-npm run server
 
 # 建構生產版本
 npm run build
@@ -288,20 +318,33 @@ npm run preview
 
 ## 🐛 故障排除
 
+### 環境變數配置問題
+- 確保 `.env` 文件存在並正確配置
+- 環境變數必須以 `VITE_` 開頭才能在前端使用
+- 修改環境變數後需要重新啟動開發服務器
+- 檢查環境變數名稱是否正確：`VITE_OLLAMA_API_URL`
+
 ### Ollama 連接失敗
 - 確保 Ollama 服務正在運行：`ollama serve`
 - 檢查端口是否正確：預設為 11434
-- 嘗試重新啟動 Ollama：`ollama serve --port 11434`
+- 檢查 API URL 是否正確：`http://your-server:11434`
+- 測試連接：`curl http://your-server:11434/api/tags`
+
+### CORS 錯誤
+- 啟用 Ollama CORS：`OLLAMA_ORIGINS="*" ollama serve`
+- 或指定特定域名：`OLLAMA_ORIGINS="https://your-domain.com" ollama serve`
+- 對於靜態部署，需要在 Ollama 配置中添加部署域名
+
+### 模型載入錯誤
+- 檢查網路連接是否正常
+- 確認 Ollama 服務器可以訪問
+- 查看瀏覽器控制台的詳細錯誤訊息
+- 嘗試重新載入頁面
 
 ### 模型未找到
 - 確認模型已下載：`ollama list`
-- 如果沒有模型，使用：`ollama pull llama2`
+- 如果沒有模型，使用：`ollama pull llama3:8b`
 - 檢查模型名稱是否正確
-
-### 前端無法連接到後端
-- 確保後端在端口 3001 上運行
-- 檢查 Vite 代理配置：`vite.config.js`
-- 查看瀏覽器控制台的錯誤訊息
 
 ### TypeScript 錯誤
 - 重新安裝依賴：`rm -rf node_modules package-lock.json && npm install`
@@ -310,6 +353,12 @@ npm run preview
 ## 🔄 更新日誌
 
 ### v1.2.0 (2025-11-17)
+- 🚀 **純前端架構**: 移除後端服務，直接調用 Ollama API
+- 📦 **靜態部署**: 支援 Vercel、Netlify 等靜態託管平台
+- 🗂️ **專案結構優化**: 移除 server 目錄，簡化專案結構
+- ⚙️ **環境變數支援**: 新增 VITE_OLLAMA_API_URL 和 VITE_OLLAMA_API_KEY 環境變數配置
+- 📋 **API 整合**: 直接使用 Ollama 標準 API (/api/tags, /api/chat)
+- 🔧 **建構優化**: 移除後端依賴，專注前端功能
 - 🏷️ **版本號顯示**: 在應用標題中顯示版本號，提供更好的版本識別
 - 📝 **Markdown 支援**: 新增完整的 Markdown 語法支援，包括程式碼高亮和格式化顯示
 - 🎯 **智能滾動控制**: 實現訊息串流時的智能滾動，用戶可隨時往上回捲禁用自動下捲功能，除非捲到底部才重新啟用
@@ -317,13 +366,14 @@ npm run preview
 - 📏 **對話框寬度優化**: 將對話框寬度調整為 90%，提供更好的閱讀體驗
 - 🌐 **允許主機配置**: 新增 VITE_ALLOWED_HOSTS 環境變數，支持動態配置 Vite 開發服務器允許的主機列表
 - 📁 **檔案顯示優化**: 檔案上傳以小字顯示並支援收合展開，類似思考過程樣式
-- 🔧 **環境變數支援**: 新增 OLLAMA_API_URL 和 OLLAMA_API_KEY 環境變數配置
 - 🎛️ **設定面板重構**: 改為左右50:50佈局，提供更平衡的視覺體驗
 - 📝 **參數說明優化**: 整合說明文字到標籤中，提供詳細的參數解釋
 - 🎚️ **滑桿統一**: 所有生成參數統一使用滑桿輸入，提升用戶體驗
 - 📊 **Context範圍調整**: 最大Context數範圍調整為4096-262144，提供更合理的設定選項
 - 🎨 **主題背景優化**: 亮色模式使用藍色漸層，暗色模式使用紫色漸層，提供更好的視覺體驗
-- 🔄 **自動配置載入**: 前端自動從後端載入環境變數預設值
+- 🧠 **串流思考過程**: 實現思考過程的即時串流顯示和展開/收起控制
+- 🔧 **錯誤處理改善**: 改善模型載入錯誤處理，提供具體的錯誤訊息
+- ⚡ **載入邏輯優化**: 修復環境變數載入時機和重複載入問題
 
 ### v1.1.0 (2025-11-16)
 - ✨ **玻璃擬態設計**: 實現現代化的玻璃擬態視覺效果，搭配漸層背景

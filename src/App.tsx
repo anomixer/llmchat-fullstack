@@ -81,6 +81,7 @@ interface ChatSettings {
     apiKey: string
     topP: number
     topK: number
+    systemPrompt: string
 }
 
 const App: React.FC = () => {
@@ -149,6 +150,7 @@ const App: React.FC = () => {
     })
     const [availableModels, setAvailableModels] = useState<Array<{ id: string; name: string }>>([])
     const [isLoadingModels, setIsLoadingModels] = useState(true)
+    const [modelsError, setModelsError] = useState<string | null>(null)
     const [settings, setSettings] = useState<ChatSettings>({
         model: '',
         temperature: 0.7,
@@ -156,7 +158,8 @@ const App: React.FC = () => {
         apiUrl: '',
         apiKey: '',
         topP: 0.9,
-        topK: 40
+        topK: 40,
+        systemPrompt: '你是一個有用的AI助手，請用繁體中文回答用戶的問題。'
     })
     const [attachedFiles, setAttachedFiles] = useState<File[]>([])
     const [isRecording, setIsRecording] = useState(false)
@@ -169,6 +172,7 @@ const App: React.FC = () => {
     const [expandedThinking, setExpandedThinking] = useState<Set<string>>(new Set())
     const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set())
     const [showStreamingThinking, setShowStreamingThinking] = useState(false)
+    const [expandedStreamingThinking, setExpandedStreamingThinking] = useState(false)
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
@@ -213,6 +217,7 @@ const App: React.FC = () => {
         document.body.classList.toggle('dark-theme', newTheme)
     }
 
+
     // 切換thinking展開狀態
     const toggleThinking = (messageId: string) => {
         setExpandedThinking(prev => {
@@ -241,41 +246,57 @@ const App: React.FC = () => {
 
     // 載入預設配置
     const loadDefaultConfig = async () => {
-        try {
-            const response = await fetch('/api/config')
-            if (response.ok) {
-                const config = await response.json()
-                setSettings(prev => ({
-                    ...prev,
-                    apiUrl: prev.apiUrl || config.apiUrl,
-                    apiKey: prev.apiKey || (config.apiKey === 'configured' ? '' : config.apiKey)
-                }))
-            }
-        } catch (error) {
-            console.error('Error loading default config:', error)
-            // 如果載入失敗，使用預設值
-            setSettings(prev => ({
-                ...prev,
-                apiUrl: prev.apiUrl || 'http://localhost:11434'
-            }))
+        // 純前端版本，從環境變數讀取預設配置
+        const defaultApiUrl = import.meta.env.VITE_OLLAMA_API_URL || 'http://localhost:11434'
+        const defaultApiKey = import.meta.env.VITE_OLLAMA_API_KEY || ''
+
+        // 直接設定新的狀態值，而不是合併
+        const newSettings = {
+            ...settings,
+            apiUrl: defaultApiUrl,
+            apiKey: defaultApiKey
         }
+
+        setSettings(newSettings)
+
+        // 立即使用新的 API URL 載入模型
+        await loadAvailableModels(defaultApiUrl)
     }
 
-    // 載入可用模型列表 - 支持自定義 API URL
-    const loadAvailableModels = async () => {
+    // 載入可用模型列表 - 直接調用 Ollama API
+    const loadAvailableModels = async (customApiUrl?: string) => {
         try {
             setIsLoadingModels(true)
-            const apiUrl = settings.apiUrl || 'http://localhost:11434'
-            const response = await fetch(`/api/models?apiUrl=${encodeURIComponent(apiUrl)}`)
+            const apiUrl = customApiUrl || settings.apiUrl || 'http://localhost:11434'
+            console.log('Loading models from:', apiUrl)
+
+            const response = await fetch(`${apiUrl}/api/tags`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            })
+
             if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`)
+                const errorText = await response.text().catch(() => 'Unknown error')
+                throw new Error(`HTTP ${response.status}: ${errorText}`)
             }
+
             const data = await response.json()
+            console.log('Models data received:', data)
+
+            if (!data.models || !Array.isArray(data.models)) {
+                throw new Error('Invalid response format: models array not found')
+            }
+
             const models = data.models.map((model: any) => ({
                 id: model.name,
                 name: model.name
             }))
+
+            console.log('Parsed models:', models)
             setAvailableModels(models)
+            setModelsError(null) // 清除錯誤訊息
 
             // 如果有模型且當前模型為空，使用第一個
             if (models.length > 0 && !settings.model) {
@@ -283,7 +304,22 @@ const App: React.FC = () => {
             }
         } catch (error) {
             console.error('Error loading models:', error)
-            setAvailableModels([]) // 不使用備用列表，只從 Ollama 獲取
+            setAvailableModels([]) // 清空模型列表
+
+            // 設定錯誤訊息
+            let errorMessage = '載入模型失敗'
+            if (error instanceof TypeError && error.message.includes('fetch')) {
+                errorMessage = '網路連線錯誤，請檢查 Ollama 服務器是否運行'
+            } else if (error instanceof Error) {
+                if (error.message.includes('CORS')) {
+                    errorMessage = 'CORS 錯誤，請檢查服務器允許跨域請求'
+                } else if (error.message.includes('HTTP')) {
+                    errorMessage = `服務器錯誤: ${error.message}`
+                } else {
+                    errorMessage = `載入錯誤: ${error.message}`
+                }
+            }
+            setModelsError(errorMessage)
         } finally {
             setIsLoadingModels(false)
         }
@@ -509,9 +545,6 @@ const App: React.FC = () => {
                 const role = message.role === 'user' ? '用戶' : '助手'
                 content += `## ${role} (${message.timestamp.toLocaleString('zh-TW')})\n\n`
                 content += `${message.content}\n\n`
-                if (message.role === 'assistant' && message.thinking) {
-                    content += `**思考過程：**\n\n${message.thinking}\n\n`
-                }
                 if (index < conversation.messages.length - 1) {
                     content += `---\n\n`
                 }
@@ -576,18 +609,55 @@ const App: React.FC = () => {
         setIsLoading(true)
         setStreamingMessage('')
         setStreamingThinking('')
+        setExpandedStreamingThinking(false) // 重置展開狀態
 
         try {
             const currentConversation = conversations.find(c => c.id === conversationId)
-            const response = await fetch('/api/chat/stream', {
+            const apiUrl = settings.apiUrl || 'http://localhost:11434'
+
+            // 構建完整的對話歷史
+            const messages = []
+
+            // 添加系統提示
+            if (settings.systemPrompt) {
+                messages.push({
+                    role: 'system',
+                    content: settings.systemPrompt
+                })
+            }
+
+            // 添加歷史對話（排除當前用戶消息）
+            const historyMessages = currentConversation?.messages || []
+            historyMessages.forEach(msg => {
+                messages.push({
+                    role: msg.role,
+                    content: msg.content
+                })
+            })
+
+            // 添加當前用戶消息
+            messages.push({
+                role: 'user',
+                content: userMessage.content
+            })
+
+            const response = await fetch(`${apiUrl}/api/chat`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    message: userMessage.content,
-                    settings: settings,
-                    history: currentConversation?.messages || []
+                    model: settings.model,
+                    messages: messages,
+                    stream: true,
+                    options: {
+                        temperature: parseFloat(settings.temperature.toString()),
+                        num_predict: parseInt(settings.maxTokens.toString()),
+                        num_ctx: parseInt(settings.maxTokens.toString()),
+                        top_p: parseFloat(settings.topP.toString()),
+                        top_k: parseInt(settings.topK.toString()),
+                        repeat_penalty: 1.1
+                    }
                 }),
             })
 
@@ -619,9 +689,9 @@ const App: React.FC = () => {
                                 console.log('Parsed stream data:', data)
 
                                 if (data.message?.content) {
-                                    setStreamingMessage(prev => prev + data.message.content)
+                                    setStreamingMessage((prev: string) => prev + data.message.content)
                                 } else if (data.message?.thinking) {
-                                    setStreamingThinking(prev => prev + data.message.thinking)
+                                    setStreamingThinking((prev: string) => prev + data.message.thinking)
                                 }
 
                                 if (data.done) {
@@ -638,13 +708,13 @@ const App: React.FC = () => {
                     // 獲取最終的串流消息內容和thinking
                     const [finalContent, finalThinking] = await Promise.all([
                         new Promise<string>((resolve) => {
-                            setStreamingMessage(current => {
+                            setStreamingMessage((current: string) => {
                                 resolve(current)
                                 return current
                             })
                         }),
                         new Promise<string>((resolve) => {
-                            setStreamingThinking(current => {
+                            setStreamingThinking((current: string) => {
                                 resolve(current)
                                 return current
                             })
@@ -705,10 +775,18 @@ const App: React.FC = () => {
 
     // 組件掛載時載入預設配置和模型列表
     useEffect(() => {
-        loadDefaultConfig().then(() => {
-            loadAvailableModels()
-        })
+        loadDefaultConfig()
     }, [])
+
+    // 當用戶在設定面板修改 API URL 時重新載入模型列表 (防抖)
+    useEffect(() => {
+        if (settings.apiUrl && settings.apiUrl !== 'http://localhost:11434') {
+            const timeoutId = setTimeout(() => {
+                loadAvailableModels()
+            }, 500) // 500ms 防抖
+            return () => clearTimeout(timeoutId)
+        }
+    }, [settings.apiUrl])
 
 
     // 鍵盤快捷鍵
@@ -778,15 +856,6 @@ const App: React.FC = () => {
         return () => document.removeEventListener('mousedown', handleClickOutside)
     }, [showConversations, showSettings])
 
-    // 當 API URL 變化時重新載入模型列表 (防抖)
-    useEffect(() => {
-        if (settings.apiUrl) {
-            const timeoutId = setTimeout(() => {
-                loadAvailableModels()
-            }, 500) // 500ms 防抖
-            return () => clearTimeout(timeoutId)
-        }
-    }, [settings.apiUrl])
 
     const sendMessage = async () => {
         console.log('Starting streaming message...')
@@ -1071,7 +1140,10 @@ const App: React.FC = () => {
                                 <label className={`block text-sm font-medium mb-1 transition-colors ${isDarkMode ? 'text-gray-300' : 'text-gray-700'
                                     }`}>
                                     模型 (選擇要使用的 AI 模型) {isLoadingModels && <span className="text-xs text-gray-500">(載入中...)</span>}
-                                    {availableModels.length === 0 && !isLoadingModels && (
+                                    {modelsError && (
+                                        <span className="text-xs text-red-500 ml-2">({modelsError})</span>
+                                    )}
+                                    {availableModels.length === 0 && !isLoadingModels && !modelsError && (
                                         <span className="text-xs text-red-500 ml-2">(未找到模型)</span>
                                     )}
                                 </label>
@@ -1370,23 +1442,24 @@ const App: React.FC = () => {
                                         content={streamingMessage || '正在生成回應...'}
                                         isDarkMode={isDarkMode}
                                     />
-                                    <div className="flex space-x-1 mt-2">
-                                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
-                                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                                    </div>
+                                    {/* 串流中的思考過程 */}
                                     {streamingThinking && (
                                         <div className="mt-3 border-t border-gray-200 dark:border-gray-600 pt-3">
                                             <button
-                                                onClick={() => setShowStreamingThinking(!showStreamingThinking)}
+                                                onClick={() => setExpandedStreamingThinking(!expandedStreamingThinking)}
                                                 className={`flex items-center space-x-2 text-sm font-medium transition-colors ${isDarkMode
                                                     ? 'text-gray-400 hover:text-gray-200'
                                                     : 'text-gray-600 hover:text-gray-800'
                                                     }`}
                                             >
                                                 <span>思考過程</span>
+                                                <div className="flex space-x-1">
+                                                    <div className="w-2 h-2 bg-orange-400 rounded-full animate-pulse"></div>
+                                                    <div className="w-2 h-2 bg-orange-400 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                                                    <div className="w-2 h-2 bg-orange-400 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+                                                </div>
                                                 <svg
-                                                    className={`w-4 h-4 transition-transform ${showStreamingThinking ? 'rotate-90' : ''}`}
+                                                    className={`w-4 h-4 transition-transform ${expandedStreamingThinking ? 'rotate-90' : ''}`}
                                                     fill="none"
                                                     stroke="currentColor"
                                                     viewBox="0 0 24 24"
@@ -1394,7 +1467,7 @@ const App: React.FC = () => {
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                                                 </svg>
                                             </button>
-                                            {showStreamingThinking && (
+                                            {expandedStreamingThinking && (
                                                 <div className={`mt-2 p-3 rounded-md text-sm transition-colors ${isDarkMode
                                                     ? 'bg-gray-700 text-gray-300 border border-gray-600'
                                                     : 'bg-gray-50 text-gray-700 border border-gray-200'
@@ -1404,6 +1477,11 @@ const App: React.FC = () => {
                                             )}
                                         </div>
                                     )}
+                                    <div className="flex space-x-1 mt-2">
+                                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
+                                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
