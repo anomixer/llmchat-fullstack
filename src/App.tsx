@@ -731,11 +731,13 @@ const App: React.FC = () => {
                 setShowConversations(false)
             }
 
-            // 關閉設定面板
+            // 關閉設定面板 - 排除模型按鈕
             const settingsPanel = document.querySelector('[data-panel="settings"]')
             const settingsButton = document.querySelector('[data-button="settings"]')
+            const modelButton = document.querySelector('[title*="點擊"]') // 模型按鈕有動態title
             if (showSettings && settingsPanel && settingsButton &&
-                !settingsPanel.contains(event.target as Node) && !settingsButton.contains(event.target as Node)) {
+                !settingsPanel.contains(event.target as Node) && !settingsButton.contains(event.target as Node) &&
+                !modelButton?.contains(event.target as Node)) {
                 setShowSettings(false)
             }
         }
@@ -793,12 +795,12 @@ const App: React.FC = () => {
                     <h1 className={`text-xl font-semibold transition-colors ${isDarkMode ? 'text-white' : 'text-gray-900'
                         }`}>LLMChat</h1>
                     <button
-                        onClick={() => setShowSettings(!showSettings)}
+                        onClick={() => setShowSettings(prev => !prev)}
                         className={`px-2 py-1 text-xs rounded-md transition-colors cursor-pointer ${isDarkMode
                             ? 'bg-gray-700 text-gray-300 border border-gray-600 hover:bg-gray-600'
                             : 'bg-gray-100 text-gray-600 border border-gray-300 hover:bg-gray-200'
                             }`}
-                        title="點擊開啟設定"
+                        title={showSettings ? '點擊關閉設定' : '點擊開啟設定'}
                     >
                         {settings.model || '未選擇模型'}
                     </button>
