@@ -119,6 +119,7 @@ npm run client
 llmchat/
 ├── src/                   # 前端原始碼
 │   ├── App.tsx            # 主應用元件
+│   ├── MarkdownMsg.tsx    # Markdown 渲染組件
 │   ├── main.jsx           # 應用程式入口
 │   └── index.css          # 全域樣式（包含玻璃擬態設計）
 ├── server/                # 後端原始碼
@@ -141,7 +142,7 @@ llmchat/
 
 ### 環境變數設定
 
-應用程式支援通過環境變數配置 Ollama API 設定。複製 `.env.example` 為 `.env` 並修改：
+應用程式支援通過環境變數配置 Ollama API 設定和 Vite 開發服務器設定。複製 `.env.example` 為 `.env` 並修改：
 
 ```bash
 cp .env.example .env
@@ -151,14 +152,16 @@ cp .env.example .env
 
 - **OLLAMA_API_URL**: Ollama 服務的 API URL（預設: http://localhost:11434）
 - **OLLAMA_API_KEY**: API 金鑰（如果需要驗證，預設: 空）
+- **VITE_ALLOWED_HOSTS**: Vite 開發服務器允許的主機列表（用逗號分隔，預設: localhost,127.0.0.1）
 
 範例 `.env` 檔案：
 ```env
 OLLAMA_API_URL=http://localhost:11434
 OLLAMA_API_KEY=your_api_key_here
+VITE_ALLOWED_HOSTS=localhost,127.0.0.1,llmchat.example.com
 ```
 
-> **注意**: 環境變數會自動載入，前端設定面板會預填這些值，但用戶仍可修改並保存到本地儲存。
+> **注意**: 環境變數會自動載入，前端設定面板會預填這些值，但用戶仍可修改並保存到本地儲存。VITE_ALLOWED_HOSTS 用於配置 Vite 開發服務器允許訪問的主機，解決跨域訪問問題。
 
 ### 前端設定
 
@@ -312,14 +315,7 @@ npm run preview
 - 🎯 **智能滾動控制**: 實現訊息串流時的智能滾動，用戶可隨時往上回捲禁用自動下捲功能，除非捲到底部才重新啟用
 - 📋 **程式碼複製功能**: Markdown 中的程式碼區塊提供一鍵複製按鈕，方便使用
 - 📏 **對話框寬度優化**: 將對話框寬度調整為 90%，提供更好的閱讀體驗
-- 📁 **檔案顯示優化**: 檔案上傳以小字顯示並支援收合展開，類似思考過程樣式
-- 🔧 **環境變數支援**: 新增 OLLAMA_API_URL 和 OLLAMA_API_KEY 環境變數配置
-- 🎛️ **設定面板重構**: 改為左右50:50佈局，提供更平衡的視覺體驗
-- 📝 **參數說明優化**: 整合說明文字到標籤中，提供詳細的參數解釋
-- 🎚️ **滑桿統一**: 所有生成參數統一使用滑桿輸入，提升用戶體驗
-- 📊 **Context範圍調整**: 最大Context數範圍調整為4096-262144，提供更合理的設定選項
-- 🎨 **主題背景優化**: 亮色模式使用藍色漸層，暗色模式使用紫色漸層，提供更好的視覺體驗
-- 🔄 **自動配置載入**: 前端自動從後端載入環境變數預設值
+- 🌐 **允許主機配置**: 新增 VITE_ALLOWED_HOSTS 環境變數，支持動態配置 Vite 開發服務器允許的主機列表
 - 📁 **檔案顯示優化**: 檔案上傳以小字顯示並支援收合展開，類似思考過程樣式
 - 🔧 **環境變數支援**: 新增 OLLAMA_API_URL 和 OLLAMA_API_KEY 環境變數配置
 - 🎛️ **設定面板重構**: 改為左右50:50佈局，提供更平衡的視覺體驗

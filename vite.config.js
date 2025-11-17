@@ -7,6 +7,8 @@ export default defineConfig({
     server: {
         port: 3000,
         open: true,
+        // 從環境變數讀取允許的主機列表
+        allowedHosts: process.env.VITE_ALLOWED_HOSTS ? process.env.VITE_ALLOWED_HOSTS.split(',').map(host => host.trim()) : undefined,
         proxy: {
             // 代理 API 請求到後端服務器
             '/api': {

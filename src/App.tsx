@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { Send, Bot, User, Settings, Trash2, Moon, Sun, Plus, MessageSquare, Paperclip, X, Mic, MicOff, Volume2, VolumeX, Download } from 'lucide-react'
-import MarkdownMessage from './MarkdownMessage'
+import MarkdownMessage from './MarkdownMsg'
 
 // Web Speech API types
 declare global {
