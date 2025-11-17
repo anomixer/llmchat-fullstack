@@ -1125,7 +1125,7 @@ const App: React.FC = () => {
                             <div>
                                 <label className={`block text-sm font-medium mb-1 transition-colors ${isDarkMode ? 'text-gray-300' : 'text-gray-700'
                                     }`}>
-                                    最大 Token 數: <span className="text-blue-600 dark:text-blue-400 font-semibold">{settings.maxTokens}</span> (限制生成回應的最大長度 4096-262144)
+                                    最大 Context 數: <span className="text-blue-600 dark:text-blue-400 font-semibold">{settings.maxTokens}</span> (設定生成回應的最大上下文長度 4096-262144)
                                 </label>
                                 <input
                                     type="range"
